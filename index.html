@@ -1,1 +1,605 @@
-{"error":"v2 of this endpoint has been disabled. Please use v8 instead.","fid":"45d52fa7f35c11834ca279af981bf4916964b5aa"}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Commission Dashboard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #f8f8f6; color: #1a1a1a; font-size: 14px; }
+.app { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0d8; }
+.header h1 { font-size: 18px; font-weight: 500; letter-spacing: -0.3px; color: #111; }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.year-tabs { display: flex; gap: 3px; }
+.year-tab { padding: 5px 13px; border: 1px solid #d0d0c8; border-radius: 6px; background: transparent; color: #666; cursor: pointer; font-size: 12px; }
+.year-tab.active { background: #fff; color: #111; border-color: #999; }
+.refresh-btn { padding: 5px 13px; border: 1px solid #d0d0c8; border-radius: 6px; background: #fff; color: #555; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 5px; }
+.refresh-btn:hover { background: #f0f0ec; }
+.refresh-btn.loading { opacity: 0.5; pointer-events: none; }
+.spin { animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { from{transform:rotate(0deg)}to{transform:rotate(360deg)} }
+
+.status-bar { padding: 7px 11px; border-radius: 6px; background: #fff; border: 1px solid #e0e0d8; font-size: 11px; color: #666; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 7px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
+.status-dot.ok { background: #3B6D11; }
+.status-dot.err { background: #A32D2D; }
+.status-dot.loading { background: #854F0B; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+.tabs { display: flex; gap: 3px; margin-bottom: 1.25rem; border-bottom: 1px solid #e0e0d8; padding-bottom: 0; }
+.tab { padding: 6px 13px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: transparent; color: #666; cursor: pointer; font-size: 12px; position: relative; bottom: -1px; }
+.tab.active { background: #f8f8f6; color: #111; border-color: #e0e0d8; border-bottom-color: #f8f8f6; }
+
+.metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin-bottom: 1.25rem; }
+.metric-card { background: #fff; border-radius: 8px; padding: 14px 16px; border: 1px solid #e8e8e0; }
+.metric-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
+.metric-value { font-size: 22px; font-weight: 500; letter-spacing: -0.5px; color: #111; }
+.metric-sub { font-size: 10px; color: #999; margin-top: 3px; }
+
+.waterfall { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1px; background: #e0e0d8; border-radius: 10px; overflow: hidden; margin-bottom: 1.25rem; }
+.wf-stage { background: #fff; padding: 14px 16px; }
+.wf-label { font-size: 10px; color: #888; margin-bottom: 3px; }
+.wf-value { font-size: 18px; font-weight: 500; color: #111; }
+.wf-gap { font-size: 10px; margin-top: 3px; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+.section-title { font-size: 10px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+.section { margin-bottom: 1.25rem; }
+
+.tbl-wrap { overflow-x: auto; max-height: 500px; overflow-y: auto; border: 1px solid #e0e0d8; border-radius: 8px; background: #fff; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th { font-size: 10px; font-weight: 600; color: #888; text-align: right; padding: 7px 8px; border-bottom: 1px solid #e8e8e0; white-space: nowrap; position: sticky; top: 0; background: #fafaf8; z-index: 1; }
+th.left { text-align: left; }
+td { padding: 6px 8px; text-align: right; border-bottom: 1px solid #f0f0ec; white-space: nowrap; color: #222; }
+td.left { text-align: left; color: #555; }
+td.deal-name { text-align: left; color: #111; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+tr:hover td { background: #fafaf8; }
+tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e0e0d8; }
+
+.badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-right: 3px; white-space: nowrap; font-weight: 500; }
+.badge-services { background: #E1F5EE; color: #0F6E56; }
+.badge-software { background: #E6F1FB; color: #185FA5; }
+.badge-staffing { background: #FAEEDA; color: #854F0B; }
+.badge-spiff { background: #EEEDFE; color: #3C3489; }
+
+.delta-pos { color: #3B6D11; font-weight: 500; }
+.delta-neg { color: #A32D2D; font-weight: 500; }
+
+.progress-wrap { background: #e8e8e0; border-radius: 3px; height: 4px; margin-top: 4px; overflow: hidden; }
+.progress-bar { height: 100%; border-radius: 3px; }
+
+.config-panel { background: #fff; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1rem; border: 1px solid #e0e0d8; }
+.config-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; font-size: 11px; }
+.config-row label { color: #666; width: 200px; flex-shrink: 0; }
+.config-row input { background: #fafaf8; border: 1px solid #ddd; border-radius: 6px; padding: 4px 8px; font-size: 11px; color: #111; flex: 1; font-family: 'Courier New', monospace; }
+.config-save { padding: 5px 14px; border: 1px solid #ccc; border-radius: 6px; background: #fff; color: #555; cursor: pointer; font-size: 11px; margin-top: 8px; margin-right: 6px; }
+.config-save:hover { background: #f5f5f0; }
+
+.spiff-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 8px; }
+.spiff-table th { font-size: 10px; font-weight: 600; color: #888; text-align: left; padding: 5px 8px; border-bottom: 1px solid #e0e0d8; background: #fafaf8; }
+.spiff-table td { padding: 4px 8px; border-bottom: 1px solid #f0f0ec; vertical-align: middle; }
+.spiff-table td input { background: transparent; border: none; font-size: 11px; color: #111; width: 100%; }
+.spiff-table td input[type=number] { width: 60px; text-align: right; }
+.spiff-table td input:focus { outline: 1px solid #aaa; border-radius: 3px; background: #fafaf8; }
+.spiff-del { background: none; border: none; cursor: pointer; color: #bbb; font-size: 16px; padding: 0 4px; line-height: 1; }
+.spiff-del:hover { color: #A32D2D; }
+.add-spiff-btn { padding: 4px 11px; border: 1px solid #ccc; border-radius: 6px; background: #fff; color: #555; cursor: pointer; font-size: 11px; }
+.add-spiff-btn:hover { background: #f5f5f0; }
+
+.filter-row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+.filter-row input, .filter-row select { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 5px 8px; font-size: 11px; color: #111; }
+.filter-row input { flex: 1; min-width: 150px; }
+.tier-mini td, .tier-mini th { padding: 4px 7px; font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="header">
+  <h1>Commission dashboard</h1>
+  <div class="header-right">
+    <div class="year-tabs">
+      <button class="year-tab active" onclick="switchYear(2026)">2026</button>
+      <button class="year-tab" onclick="switchYear(2025)">2025</button>
+    </div>
+    <button class="refresh-btn" id="refresh-btn" onclick="loadData()">
+      <span id="refresh-icon">↻</span> Refresh data
+    </button>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-dot ok" id="status-dot"></div>
+  <span id="status-text">Ready — click Refresh to load live data from Google Drive.</span>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('overview')">Overview</button>
+  <button class="tab" onclick="showTab('monthly')">Monthly</button>
+  <button class="tab" onclick="showTab('recon')">Reconciliation</button>
+  <button class="tab" onclick="showTab('spiffs')">Spiffs &amp; renewals</button>
+  <button class="tab" onclick="showTab('config')">Config</button>
+</div>
+
+<!-- OVERVIEW -->
+<div id="tab-overview">
+  <div class="metrics-grid">
+    <div class="metric-card"><div class="metric-label">Projected comm</div><div class="metric-value" id="m-proj">—</div><div class="metric-sub">Full year est.</div></div>
+    <div class="metric-card"><div class="metric-label">Stmt comm (YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub">Per accounting</div></div>
+    <div class="metric-card"><div class="metric-label">Invoiced comm</div><div class="metric-value" id="m-inv">—</div><div class="metric-sub">Billed to date</div></div>
+    <div class="metric-card"><div class="metric-label">Cash received</div><div class="metric-value" id="m-paid">—</div><div class="metric-sub">Customer paid</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">A/R waterfall</div>
+    <div class="waterfall">
+      <div class="wf-stage"><div class="wf-label">Projected</div><div class="wf-value" id="wf-proj">—</div><div class="wf-gap" style="color:#999;">Full year</div></div>
+      <div class="wf-stage"><div class="wf-label">Stmt (YTD)</div><div class="wf-value" id="wf-stmt">—</div><div class="wf-gap" id="wf-gap1">—</div></div>
+      <div class="wf-stage"><div class="wf-label">Invoiced</div><div class="wf-value" id="wf-inv">—</div><div class="wf-gap" id="wf-gap2">—</div></div>
+      <div class="wf-stage"><div class="wf-label">Cash received</div><div class="wf-value" id="wf-paid">—</div><div class="wf-gap" id="wf-gap3">—</div></div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="section">
+      <div class="section-title">By type — projected GM</div>
+      <div id="type-breakdown"><div style="font-size:11px;color:#999;">Load data to see breakdown</div>
+    </div>
+    <div>
+      <div class="section-title">Services tiers</div>
+      <div class="tbl-wrap tier-mini" style="max-height:none;margin-bottom:10px;">
+        <table><thead><tr><th class="left">GM from</th><th class="left">GM to</th><th>Rate</th></tr></thead><tbody id="tier-svc"></tbody></table>
+      </div>
+      <div class="section-title">Software / license tiers</div>
+      <div class="tbl-wrap tier-mini" style="max-height:none;">
+        <table><thead><tr><th class="left">GM from</th><th class="left">GM to</th><th>Rate</th></tr></thead><tbody id="tier-sw"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MONTHLY -->
+<div id="tab-monthly" style="display:none">
+  <div class="tbl-wrap" id="monthly-wrap">
+    <div style="padding:1rem;font-size:11px;color:#999;">Load data to see monthly breakdown</div>
+  </div>
+</div>
+
+<!-- RECONCILIATION -->
+<div id="tab-recon" style="display:none">
+  <div class="filter-row">
+    <input type="text" id="recon-search" placeholder="Search deal name..." oninput="renderRecon()" />
+    <select id="recon-type" onchange="renderRecon()">
+      <option value="">All types</option>
+      <option value="services">Services</option>
+      <option value="software">Software</option>
+      <option value="staffing">Staffing</option>
+    </select>
+    <select id="recon-month" onchange="renderRecon()">
+      <option value="">All months</option>
+    </select>
+    <select id="recon-flag" onchange="renderRecon()">
+      <option value="">All deals</option>
+      <option value="delta">Has delta only</option>
+      <option value="spiff">Spiffs only</option>
+    </select>
+  </div>
+  <div class="tbl-wrap" id="recon-wrap">
+    <div style="padding:1rem;font-size:11px;color:#999;">Load data to see deal + month reconciliation</div>
+  </div>
+</div>
+
+<!-- SPIFFS & RENEWALS -->
+<div id="tab-spiffs" style="display:none">
+  <div class="config-panel">
+    <div class="section-title" style="margin-bottom:10px;">Spiff &amp; renewal list</div>
+    <div style="font-size:11px;color:#777;margin-bottom:12px;line-height:1.6;">
+      Deals listed here have their gross margin multiplied by the GM spiff factor before commission calculation.
+      Your calculated commission is then compared against accounting's statement to surface discrepancies.
+      Save to Drive to persist across sessions.
+    </div>
+    <div class="tbl-wrap" style="max-height:none;margin-bottom:10px;">
+      <table class="spiff-table">
+        <thead><tr><th style="width:58%;">Project name (must match ERP exactly)</th><th style="width:14%;text-align:center;">Comm spiff</th><th style="width:14%;text-align:center;">GM spiff</th><th style="width:14%;"></th></tr></thead>
+        <tbody id="spiff-tbody"></tbody>
+      </table>
+    </div>
+    <button class="add-spiff-btn" onclick="addSpiffRow()">+ Add deal</button>
+    <div style="margin-top:10px;">
+      <button class="config-save" onclick="saveSpiffsToDrive()">Save to Drive</button>
+      <button class="config-save" onclick="saveSpiffsLocal()">Save locally</button>
+    </div>
+    <div id="spiff-status" style="font-size:11px;color:#888;margin-top:6px;"></div>
+  </div>
+</div>
+
+<!-- CONFIG -->
+<div id="tab-config" style="display:none">
+  <div class="config-panel">
+    <div class="section-title" style="margin-bottom:10px;">Google Drive settings</div>
+    <div class="config-row"><label>Folder ID</label><input type="text" id="cfg-folder" value="1a4X3tFUm2L-azbgDAT-M27o8tQeva_Ba" /></div>
+    <div style="height:6px;"></div>
+    <div class="config-row"><label>Services CSV</label><input type="text" id="cfg-svc" value="commission_calc__projected_services_revenue_report_pivot.csv" /></div>
+    <div class="config-row"><label>Software CSV</label><input type="text" id="cfg-sw" value="commission_calc__projected_software_revenue_report_pivot.csv" /></div>
+    <div class="config-row"><label>Staffing CSV</label><input type="text" id="cfg-staff" value="commission_calc__projected_staffing_revenue_report_pivot.csv" /></div>
+    <div class="config-row"><label>Invoices CSV</label><input type="text" id="cfg-inv" value="commission_calc__invoices_report.csv" /></div>
+    <div class="config-row"><label>Payments CSV</label><input type="text" id="cfg-pay" value="commission_calc__invoice_payments_monthly_report.csv" /></div>
+    <div class="config-row"><label>GM pivot CSV</label><input type="text" id="cfg-gm" value="commission_calc__gross_margin_report_pivot.csv" /></div>
+    <div class="config-row"><label>Commission statement</label><input type="text" id="cfg-stmt" value="commission_statement.xlsx" /></div>
+    <div class="config-row"><label>Spiff list (JSON)</label><input type="text" id="cfg-spiff" value="commission_spiffs.json" /></div>
+    <button class="config-save" onclick="setStatus('ok','Settings updated — click Refresh to reload data.')">Save settings</button>
+  </div>
+</div>
+
+<script>
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SVC_TIERS = [{f:-9999999,t:450000,r:0.05},{f:450001,t:750000,r:0.10},{f:750001,t:1250000,r:0.15},{f:1250001,t:1750000,r:0.20},{f:1750001,t:999999999,r:0.25}];
+const SW_TIERS  = [{f:-9999999,t:200000,r:0.20},{f:200001,t:400000,r:0.25},{f:400001,t:600000,r:0.30},{f:600001,t:800000,r:0.35},{f:800001,t:999999999,r:0.40}];
+
+let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[] };
+
+function fmt(n) {
+  if(n===null||n===undefined||isNaN(n))return '—';
+  const a=Math.abs(n),s=n<0?'-':'';
+  if(a>=1000000)return s+'$'+(a/1000000).toFixed(2)+'M';
+  if(a>=1000)return s+'$'+Math.round(a).toLocaleString();
+  return s+'$'+a.toFixed(2);
+}
+function fmtD(n,thr=0.5) {
+  if(!n&&n!==0)return '';
+  if(Math.abs(n)<thr)return '<span style="color:#ccc;">—</span>';
+  const cls=n>0?'delta-pos':'delta-neg',s=n>0?'+':'';
+  return `<span class="${cls}">${s}${fmt(n)}</span>`;
+}
+function calcComm(gm,type) {
+  if(!gm||gm<=0)return 0;
+  const tiers=type==='software'?SW_TIERS:SVC_TIERS;
+  let c=0,cum=0;
+  for(const t of tiers){if(cum>=gm)break;const sp=t.t-Math.max(t.f,cum);const a=Math.min(gm-cum,sp);if(a>0){c+=a*t.r;cum+=a;}}
+  return c;
+}
+function getSpiff(name){return state.spiffs.find(s=>name&&name.toLowerCase()===s.name.toLowerCase());}
+function isSpiff(name){return !!getSpiff(name);}
+function gmMult(name){const s=getSpiff(name);return s?parseFloat(s.gmSpiff)||0.5:1;}
+
+function setStatus(type,msg){document.getElementById('status-dot').className='status-dot '+type;document.getElementById('status-text').textContent=msg;}
+function showTab(name){
+  ['overview','monthly','recon','spiffs','config'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===name?'':'none';});
+  document.querySelectorAll('.tab').forEach((el,i)=>{el.classList.toggle('active',['overview','monthly','recon','spiffs','config'][i]===name);});
+  if(name==='recon')renderRecon();
+}
+function switchYear(y){
+  state.year=y;
+  document.querySelectorAll('.year-tab').forEach((el,i)=>{el.classList.toggle('active',[2026,2025][i]===y);});
+  renderDashboard();
+}
+
+function renderTiers(){
+  const r=(tiers,id)=>{document.getElementById(id).innerHTML=tiers.map(t=>`<tr><td class="left">${t.f<0?'$0':'$'+t.f.toLocaleString()}</td><td class="left">${t.t>1e8?'∞':'$'+t.t.toLocaleString()}</td><td>${(t.r*100).toFixed(0)}%</td></tr>`).join('');};
+  r(SVC_TIERS,'tier-svc');r(SW_TIERS,'tier-sw');
+}
+
+function renderSpiffTable(){
+  document.getElementById('spiff-tbody').innerHTML=state.spiffs.map((s,i)=>`<tr>
+    <td><input type="text" value="${s.name||''}" onchange="state.spiffs[${i}].name=this.value" style="width:100%;" /></td>
+    <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.commSpiff||1}" onchange="state.spiffs[${i}].commSpiff=parseFloat(this.value)||1" style="width:55px;text-align:right;" /></td>
+    <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.gmSpiff||0.5}" onchange="state.spiffs[${i}].gmSpiff=parseFloat(this.value)||0.5" style="width:55px;text-align:right;" /></td>
+    <td style="text-align:center;"><button class="spiff-del" onclick="state.spiffs.splice(${i},1);renderSpiffTable()">×</button></td>
+  </tr>`).join('');
+}
+function addSpiffRow(){state.spiffs.push({name:'',commSpiff:1,gmSpiff:0.5});renderSpiffTable();showTab('spiffs');}
+function saveSpiffsLocal(){try{localStorage.setItem('comm_spiffs',JSON.stringify(state.spiffs));document.getElementById('spiff-status').textContent='Saved locally in browser.';}catch(e){}}
+function loadSpiffsLocal(){try{const d=localStorage.getItem('comm_spiffs');if(d)state.spiffs=JSON.parse(d);}catch(e){}}
+
+async function saveSpiffsToDrive(){
+  const json=JSON.stringify(state.spiffs,null,2);
+  const fid=document.getElementById('cfg-folder').value.trim();
+  const fname=document.getElementById('cfg-spiff').value.trim();
+  try{
+    await callDrive(`In Google Drive folder ID ${fid}, create or overwrite a file named "${fname}" with this JSON content:\n${json}`);
+    document.getElementById('spiff-status').textContent='Saved to Drive successfully.';
+  }catch(e){document.getElementById('spiff-status').textContent='Drive save failed: '+e.message;saveSpiffsLocal();}
+}
+
+async function callDrive(prompt){
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens;4000,messages:[{role:"user",content:prompt}],mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"gdrive"}]})
+  });
+  const d=await res.json();
+  if(d.error)throw new Error(d.error.message);
+  return(d.content.filter(b=>b.type==='mcp_tool_result').map(b=>b.content?.[0]?.text||'').join('\n'))||(d.content.filter(b=>b.type==='text').map(b=>b.text).join('\n'));
+}
+
+function monthIdx(s){
+  if(!s)return -1;
+  const str=String(s).trim().toLowerCase().substring(0,3);
+  return['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(str);
+}
+
+async function loadData(){
+  const btn=document.getElementById('refresh-btn'),icon=document.getElementById('refresh-icon');
+  btn.classList.add('loading');icon.className='spin';icon.textContent='↻';
+  setStatus('loading','Connecting to Google Drive...');
+  loadSpiffsLocal();
+
+  const fid=document.getElementById('cfg-folder').value.trim();
+  const fileCfg=[
+    {key:'svc',id:'cfg-svc'},{key:'sw',id:'cfg-sw'},{key:'staff',id:'cfg-staff'},
+    {key:'inv',id:'cfg-inv'},{key:'pay',id:'cfg-pay'},{key:'gm',id:'cfg-gm'}
+  ];
+
+  try{
+    const listing=await callDrive(`List all files in Google Drive folder ID: ${fid}. Return ONLY a JSON array: [{"id":"...","name":"..."}]`);
+    let files=[];
+    try{const m=listing.match(/\[[\s\S]*?\]/);if(m)files=JSON.parse(m[0]);}catch(e){}
+    if(!files.length){setStatus('err','Could not list Drive folder. Check folder ID and ensure Google Drive connector is enabled.');renderSample();return;}
+
+    setStatus('loading',`Found ${files.length} file(s). Loading reports...`);
+    const find=fname=>files.find(f=>f.name&&(f.name.toLowerCase()===fname.toLowerCase()||f.name.toLowerCase()===fname.toLowerCase().replace(/\.csv$/i,$')));
+
+    const csv={};const missing=[];
+    for(const {key,id} of fileCfg){
+      const fname=document.getElementById(id).value.trim();
+      const file=find(fname);
+      if(!file){missing.push(key);continue;}
+      try{csv[key]=await callDrive(`Return the raw CSV text of Google Drive file ID: ${file.id}. Output CSV only.`);}
+      catch(e){missing.push(key);}
+    }
+
+    const spiffFname=document.getElementById('cfg-spiff').value.trim();
+    const spiffFile=find(spiffFname);
+    if(spiffFile){
+      try{const sj=await callDrive(`Return the raw JSON text of Google Drive file ID: ${spiffFile.id}.`);const m=sj.match(/\[[\s\S]*\]/);if(m)state.spiffs=JSON.parse(m[0]);}catch(e){}
+    }
+
+    const stmtFname=document.getElementById('cfg-stmt').value.trim();
+    const stmtFile=find(stmtFname);
+    state.stmtRows=[];
+    if(stmtFile){
+      try{
+        const yr=state.year;
+        const stmtText=await callDrive(
+          `Read Google Drive Excel file ID: ${stmtFile.id}. It has tabs named "${yr}", "${yr} Licenses", "${yr-1}", "${yr-1} Licenses". `+
+          `Extract all data rows from the "${yr}" and "${yr} Licenses" tabs. `+
+          `For each row, return a JSON object with: month (the Mon/Month column value), project (the Project column), `+
+          `netGmBusDev (Net GM Bus Dev or Net GM for Bus Dev column, numeric), `+
+          `busPct (Bus Dev % or % column, numeric), `+
+          `busCommStmt (Bus Dev Cmsn or Bus Dev Comm $ column, numeric), `+
+          `projectType (Project Type column if present, else empty string), `+
+          `paidDate (Payment date or Pmt Date column). `+
+          `Return ONLY a JSON array of these objects.`
+        );
+        const m=stmtText.match(/\[[\s\S]*\]/);
+        if(m)state.stmtRows=JSON.parse(m[0]).map(r=>({...r,monthIdx:monthIdx(r.month),busCommStmt:parseFloat(r.busCommStmt)||0,netGmBusDev:parseFloat(r.netGmBusDev)||0})).filter(r=>r.monthIdx>=0&&r.project);
+      }catch(e){missing.push('commission_statement');}
+    }
+
+    processCSVs(csv);
+    renderSpiffTable();
+    renderDashboard();
+    const note=missing.length?` — missing: ${missing.join(', ')}`:' — all files loaded';
+    setStatus('ok',`Live data from Drive${note}. Refreshed ${new Date().toLocaleTimeString()}`);
+  }catch(err){
+    setStatus('err','Drive error: '+err.message+'. Showing sample data.');
+    renderSample();
+  }finally{
+    btn.classList.remove('loading');icon.className='';icon.textContent='↻';
+  }
+}
+
+function parseCSV(text){
+  if(!text||!text.trim())return[];
+  const lines=text.trim().split('\n');if(lines.length<2)return[];
+  let start=0;
+  if(lines[0].split(',').length<3&&lines.length>2)start=1;
+  const hdrs=lines[start].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+  return lines.slice(start+1).map(line=>{
+    const vals=line.split(',').map(v=>v.trim().replace(/^"|"$/g,''));
+    const obj={};hdrs.forEach((h,i)=>obj[h]=vals[i]||'');return obj;
+  }).filter(r=>Object.values(r).some(v=>v&&v.trim()));
+}
+
+function processCSVs(csv){
+  const allDeals=[];
+  const processSheet=(rows,type)=>{
+    if(!rows||!rows.length)return;
+    const byProj={};
+    rows.forEach(row=>{
+      const proj=row['Project']||row['project']||'';if(!proj||proj==='No project assigned')return;
+      if(!byProj[proj])byProj[proj]={name:proj,type,months:{},spiff:isSpiff(proj),gmMult:gmMult(proj)};
+      const dateStr=row['Date']||row['date']||'';
+      const mi=dateStr?new Date(dateStr).getMonth():-1;
+      const projGm=parseFloat(row['Projected Margin ($)']||0)||0;
+      const actGm=parseFloat(row['Project Net Gross Margin (Revrec)']||0)||0;
+      const gm=(actGm||projGm)*byProj[proj].gmMult;
+      if(mi>=0)byProj[proj].months[mi]=(byProj[proj].months[mi]||0)+gm;
+    });
+    Object.values(byProj).forEach(d=>{
+      d.projGm=Object.values(d.months).reduce((a,b)=>a+b,0);
+      d.projComm=calcComm(d.projGm,type);
+      allDeals.push(d);
+    });
+  };
+  processSheet(parseCSV(csv.svc),'services');
+  processSheet(parseCSV(csv.sw),'software');
+  processSheet(parseCSV(csv.staff),'staffing');
+
+  state.invoiceRows=parseCSV(csv.inv).map(r=>({proj:r['Project']||r['Invoice - Project']||'',date:r['Date']||'',total:parseFloat(r['Total']||0)||0}));
+  state.paymentRows=parseCSV(csv.pay).map(r=>({proj:r['Invoice - Project']||r['Project']||'',paidDate:r['Date']||'',total:parseFloat(r['Total']||0)||0}));
+  state.gmRows=parseCSV(csv.gm).map(r=>({proj:r['Project']||'',date:r['Date']||'',mi:r['Date']?new Date(r['Date']).getMonth():-1,gm:parseFloat(r['Project Net Gross Margin (Revrec)']||0)||0}));
+
+  allDeals.forEach(d=>{
+    d.invoicedRev=state.invoiceRows.filter(r=>r.proj===d.name).reduce((a,r)=>a+r.total,0);
+    d.paidRev=state.paymentRows.filter(r=>r.proj===d.name).reduce((a,r)=>a+r.total,0);
+    const actGmTotal=state.gmRows.filter(r=>r.proj===d.name).reduce((a,r)=>a+r.gm,0)*d.gmMult;
+    d.invoicedComm=actGmTotal>0?calcComm(actGmTotal,d.type):(d.invoicedRev?calcComm(d.invoicedRev*0.4*d.gmMult,d.type):0);
+    d.paidComm=(d.invoicedComm&&d.invoicedRev)?d.invoicedComm*(d.paidRev/(d.invoicedRev||1)):0;
+  });
+  state.deals=allDeals;
+}
+
+function renderSample(){
+  state.spiffs=[
+    {name:'FedEx - Splunk MSP 2025-2026',commSpiff:1,gmSpiff:0.5},
+    {name:'Bayhealth - Premium Support 2024 Autorenewal',commSpiff:1,gmSpiff:0.5},
+    {name:'CFA - Splunk Core - Premium Support - 2025',commSpiff:1,gmSpiff:0.5},
+    {name:'Allied Global - 2025 Splunk PS',commSpiff:1,gmSpiff:0.5},
+  ];
+  state.deals=[
+    {name:'FedEx - Splunk MSP 2025-2026',type:'services',projGm:58707,projComm:10117,invoicedRev:221834,invoicedComm:3552,paidRev:89000,paidComm:1199,spiff:true,gmMult:0.5,months:{0:7864,1:8063,2:15684,3:4183,4:22913}},
+    {name:'Dyntek-NYUCS-MDR Adv Svcs',type:'services',projGm:198986,projComm:20135,invoicedRev:1848900,invoicedComm:20135,paidRev:1848900,paidComm:20135,spiff:false,gmMult:1,months:{0:65582,1:63090,2:70314}},
+    {name:'Georgetown - MDR Support 2025',type:'services',projGm:87053,projComm:20590,invoicedRev:0,invoicedComm:0,paidRev:0,paidComm:0,spiff:false,gmMult:1,months:{0:1264,1:66,3:18201,4:8440,5:8440,6:8440,7:8440,8:8440,9:8440,10:8440,11:8440}},
+    {name:'FedEx - Dynatrace MSP 2026-2027',type:'services',projGm:276609,projComm:69152,invoicedRev:0,invoicedComm:0,paidRev:0,paidComm:0,spiff:false,gmMult:1,months:{5:45244,6:41137,7:42698,8:43189,9:43180,10:39105,11:22057}},
+    {name:'BCR Cyber - Splunk Licenses',type:'software',projGm:13860,projComm:4158,invoicedRev:13860,invoicedComm:4158,paidRev:0,paidComm:0,spiff:false,gmMult:1,months:{1:13860}},
+    {name:'CFA - O11y PM - Jacob Dorf',type:'staffing',projGm:14998,projComm:3750,invoicedRev:10000,invoicedComm:2500,paidRev:10000,paidComm:2500,spiff:true,gmMult:0.5,months:{0:744}},
+  ];
+  state.stmtRows=[
+    {monthIdx:0,project:'FedEx - Splunk MSP 2025-2026',netGmBusDev:7864,busPct:0.05,busCommStmt:393.22,projectType:'Splunk - Enterprise',paidDate:'2026-04-15'},
+    {monthIdx:0,project:'Dyntek-NYUCS-MDR Adv Svcs',netGmBusDev:65582,busPct:0.05,busCommStmt:3279.09,projectType:'Whole-of-State',paidDate:'2026-04-15'},
+    {monthIdx:1,project:'FedEx - Splunk MSP 2025-2026',netGmBusDev:8063,busPct:0.05,busCommStmt:308.00,projectType:'Splunk - Enterprise',paidDate:'2026-05-15'},
+    {monthIdx:1,project:'BCR Cyber - Splunk Licenses',netGmBusDev:786,busPct:0.20,busCommStmt:157.26,projectType:'Splunk - Enterprise',paidDate:'2026-04-15'},
+  ];
+  renderSpiffTable();
+  renderDashboard();
+}
+
+function renderDashboard(){
+  const deals=state.deals;
+  const totProj=deals.reduce((a,d)=>a+(d.projComm||0),0);
+  const totStmt=state.stmtRows.reduce((a,r)=>a+(r.busCommStmt||0),0);
+  const totInv=deals.reduce((a,d)=>a+(d.invoicedComm||0),0);
+  const totPaid=deals.reduce((a,d)=>a+(d.paidComm||0),0);
+
+  document.getElementById('m-proj').textContent=fmt(totProj);
+  document.getElementById('m-stmt').textContent=fmt(totStmt);
+  document.getElementById('m-inv').textContent=fmt(totInv);
+  document.getElementById('m-paid').textContent=fmt(totPaid);
+  document.getElementById('wf-proj').textContent=fmt(totProj);
+  document.getElementById('wf-stmt').textContent=fmt(totStmt);
+  document.getElementById('wf-inv').textContent=fmt(totInv);
+  document.getElementById('wf-paid').textContent=fmt(totPaid);
+  document.getElementById('wf-gap1').innerHTML='vs proj: '+fmtD(totStmt-totProj);
+  document.getElementById('wf-gap2').innerHTML='vs stmt: '+fmtD(totInv-totStmt);
+  document.getElementById('wf-gap3').innerHTML='vs inv: '+fmtD(totPaid-totInv);
+
+  const byType={};
+  deals.forEach(d=>{if(!byType[d.type])byType[d.type]={gm:0,comm:0};byType[d.type].gm+=(d.projGm||0);byType[d.type].comm+=(d.projComm||0);});
+  const maxGm=Math.max(...Object.values(byType).map(v=>v.gm),1);
+  document.getElementById('type-breakdown').innerHTML=Object.entries(byType).map(([type,vals])=>{
+    const pct=Math.round(vals.gm/maxGm*100);
+    const clr=type==='software'?'#378ADD':type==='staffing'?'#BA7517':'#1D9E75';
+    return `<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span><span class="badge badge-${type}">${type}</span>${fmt(vals.gm)} GM</span><span style="color:#888;">${fmt(vals.comm)} comm</span></div><div class="progress-wrap"><div class="progress-bar" style="width:${pct}%;background:${clr};"></div></div></div>`;
+  }).join('');
+
+  renderMonthly();
+}
+
+function renderMonthly(){
+  const mGm=Array(12).fill(0),mProj=Array(12).fill(0),mStmt=Array(12).fill(0);
+  state.deals.forEach(d=>{if(d.months)Object.entries(d.months).forEach(([m,gm])=>{const mi=parseInt(m);mGm[mi]+=gm;mProj[mi]+=calcComm(gm,d.type);});});
+  state.stmtRows.forEach(r=>{if(r.monthIdx>=0)mStmt[r.monthIdx]+=(r.busCommStmt||0);});
+  document.getElementById('monthly-wrap').innerHTML=`<table>
+    <thead><tr><th class="left">Metric</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
+    <tbody>
+      <tr><td class="left">Proj GM</td>${mGm.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mGm.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Proj comm</td>${mProj.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProj.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Stmt comm</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
+    </tbody></table>`;
+}
+
+function renderRecon(){
+  const search=(document.getElementById('recon-search').value||'').toLowerCase();
+  const typeF=document.getElementById('recon-type').value;
+  const monthVal=document.getElementById('recon-month').value;
+  const monthF=monthVal!==''?parseInt(monthVal):null;
+  const flagF=document.getElementById('recon-flag').value;
+
+  const sel=document.getElementById('recon-month');
+  if(sel.options.length<=1){MONTHS.forEach((m,i)=>sel.add(new Option(m,String(i))));}
+
+  const stmtLookup={};
+  state.stmtRows.forEach(r=>{
+    const k=r.project+'|'+r.monthIdx;
+    if(!stmtLookup[k])stmtLookup[k]={comm:0,netGm:0,type:r.projectType||''};
+    stmtLookup[k].comm+=(r.busCommStmt||0);
+    stmtLookup[k].netGm+=(r.netGmBusDev||0);
+  });
+
+  const rows=[];
+  state.deals.forEach(d=>{
+    if(typeF&&d.type!==typeF)return;
+    if(search&&!d.name.toLowerCase().includes(search))return;
+    const allMonths=new Set([
+      ...Object.keys(d.months||{}).map(Number),
+      ...state.stmtRows.filter(r=>r.project===d.name).map(r=>r.monthIdx)
+     ]);
+    allMonths.forEach(mi=>{
+      if(isNaN(mi)||mi<0)return;
+      if(monthF!==null&&mi!==monthF)return;
+      const projGm=(d.months||{})[mi]||0;
+      const myComm=calcComm(projGm,d.type);
+      const sk=d.name+'|'+mi;
+      const stmtComm=stmtLookup[sk]?stmtLookup[sk].comm:0;
+      const stmtNetGm=stmtLookup[sk]?stmtLookup[sk].netGm:0;
+      const projType=stmtLookup[sk]?stmtLookup[sk].type:'';
+      const delta=stmtComm-myComm;
+      if(flagF==='delta'&&Math.abs(delta)<0.5)return;
+      if(flagF==='spiff'&&!d.spiff)return;
+      rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,projType});
+    });
+  });
+
+  const wrap=document.getElementById('recon-wrap');
+  if(!rows.length){wrap.innerHTML='<div style="padding:1rem;font-size:11px;color:#999;">No rows match current filters.</div>';return;}
+
+  wrap.innerHTML=`<table>
+    <thead><tr>
+      <th class="left">Deal</th><th class="left">Type</th><th class="left">Month</th>
+      <th>Proj GM</th><th>My comm</th><th>Stmt net GM</th><th>Stmt comm</th><th>Delta</th><th class="left">Project type</th><th>Spiff</th>
+    </tr></thead>
+    <tbody>${rows.sort((a,b)=>a.month-b.month||(a.name>b.name?1:-1)).map(r=>`<tr>
+      <td class="deal-name" title="${r.name}">${r.name}</td>
+      <td><span class="badge badge-${r.type}">${r.type}</span></td>
+      <td class="left">${MONTHS[r.month]||'—'}</td>
+      <td>${fmt(r.projGm)}</td>
+      <td>${fmt(r.myComm)}</td>
+      <td>${fmt(r.stmtNetGm)}</td>
+      <td>${fmt(r.stmtComm)}</td>
+      <td>${fmtD(r.delta)}</td>
+      <td class="left" style="color:#888;font-size:10px;">${r.projType||'—'}</td>
+      <td style="text-align:center;">${r.spiff?'<span class="badge badge-spiff">spiff</span>':''}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+renderTiers();
+renderSample();
+</script>
+</div>
+</body>
+</html>
+  </tr></thead>
+    <tbody>${rows.sort((a,b)=>a.month-b.month||(a.name>b.name?1:-1)).map(r=>`<tr>
+      <td class="deal-name" title="${r.name}">${r.name}</td>
+      <td><span class="badge badge-${r.type}">${r.type}</span></td>
+      <td class="left">${MONTHS[r.month]||'—'}</td>
+      <td>${fmt(r.projGm)}</td>
+      <td>${fmt(r.myComm)}</td>
+      <td>${fmt(r.stmtNetGm)}</td>
+      <td>${fmt(r.stmtComm)}</td>
+      <td>${fmtD(r.delta)}</td>
+      <td class="left" style="color:#888;font-size:10px;">${r.projType||'—'}</td>
+      <td style="text-align:center;">${r.spiff?'<span class="badge badge-spiff">spiff</span>':''}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+renderTiers();
+renderSample();
+</script>
+</div>
+</body>
+</html>
