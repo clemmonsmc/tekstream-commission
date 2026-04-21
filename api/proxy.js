@@ -14,27 +14,52 @@ export default async function handler(req, res) {
     const tokenData = await tokenResp.json();
     const accessToken = tokenData.access_token;
     if (!accessToken) return res.status(500).json({ error: 'Failed to get Google access token', details: tokenData });
-    const { action, folderId, fileId, fileName, content, base64, prompt } = req.body;
+
+    const { action, folderId, fileId, fileName, content, sheetName } = req.body;
+
     if (action === 'list') {
       const r = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100", { headers: { 'Authorization': 'Bearer ' + accessToken } });
       return res.json(await r.json());
     }
+
     if (action === 'get') {
       const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media", { headers: { 'Authorization': 'Bearer ' + accessToken } });
       return res.json({ content: await r.text() });
     }
-    if (action === 'getExcel') {
-      const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media", { headers: { 'Authorization': 'Bearer ' + accessToken } });
-      return res.json({ base64: Buffer.from(await r.arrayBuffer()).toString('base64') });
+
+    if (action === 'getSheetCSV') {
+      // Export a specific sheet from an Excel/Sheets file as CSV using Drive export
+      // First get the file metadata to find sheet IDs
+      const metaR = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?fields=id,name,mimeType", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      const meta = await metaR.json();
+      
+      // If it's an xlsx, we need to use the Sheets API - first check if it has a Sheets version
+      // Export as CSV for a specific sheet by name using the export URL
+      // Drive allows exporting XLSX as CSV but only for the first sheet
+      // For multi-sheet, we use the Sheets API gid parameter
+      
+      // Get sheet list via Sheets API
+      const sheetsMetaR = await fetch("https://sheets.googleapis.com/v4/spreadsheets/" + fileId + "?fields=sheets.properties", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      const sheetsMeta = await sheetsMetaR.json();
+      
+      if (sheetsMeta.error) {
+        // File might be xlsx not native Sheets - try direct export
+        const csvR = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "/export?mimeType=text%2Fcsv", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+        return res.json({ csv: await csvR.text(), sheets: [] });
+      }
+
+      const sheets = sheetsMeta.sheets?.map(s => ({ name: s.properties.title, gid: s.properties.sheetId })) || [];
+      
+      // Find requested sheet
+      const targetSheet = sheets.find(s => s.name === sheetName) || sheets[0];
+      if (!targetSheet) return res.json({ csv: '', sheets: sheets.map(s => s.name) });
+
+      // Export that specific sheet as CSV
+      const csvR = await fetch("https://docs.google.com/spreadsheets/d/" + fileId + "/export?format=csv&gid=" + targetSheet.gid, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      const csv = await csvR.text();
+      return res.json({ csv, sheets: sheets.map(s => s.name), sheetName: targetSheet.name });
     }
-    if (action === 'parseExcel') {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: base64 } }, { type: 'text', text: prompt }] }] })
-      });
-      return res.json(await r.json());
-    }
+
     if (action === 'save') {
       const listR = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+name='" + fileName + "'+and+trashed=false&fields=files(id)", { headers: { 'Authorization': 'Bearer ' + accessToken } });
       const existingId = (await listR.json()).files?.[0]?.id;
@@ -42,6 +67,7 @@ export default async function handler(req, res) {
       await fetch("https://www.googleapis.com/upload/drive/v3/files/" + uploadId + "?uploadType=media", { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: content });
       return res.json({ ok: true });
     }
+
     return res.status(400).json({ error: 'Unknown action: ' + action });
   } catch (err) {
     return res.status(500).json({ error: err.message });
