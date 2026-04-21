@@ -144,7 +144,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   <div class="two-col">
     <div class="section">
       <div class="section-title">By type — projected GM</div>
-      <div id="type-breakdown"><div style="font-size:11px;color:#999;">Load data to see breakdown</div>
+      <div id="type-breakdown"><div style="font-size:11px;color:#999;">Load data to see breakdown</div></div>
     </div>
     <div>
       <div class="section-title">Services tiers</div>
@@ -305,7 +305,7 @@ async function saveSpiffsToDrive(){
 async function callDrive(prompt){
   const res=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens;4000,messages:[{role:"user",content:prompt}],mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"gdrive"}]})
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:prompt}],mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"gdrive"}]})
   });
   const d=await res.json();
   if(d.error)throw new Error(d.error.message);
@@ -337,7 +337,7 @@ async function loadData(){
     if(!files.length){setStatus('err','Could not list Drive folder. Check folder ID and ensure Google Drive connector is enabled.');renderSample();return;}
 
     setStatus('loading',`Found ${files.length} file(s). Loading reports...`);
-    const find=fname=>files.find(f=>f.name&&(f.name.toLowerCase()===fname.toLowerCase()||f.name.toLowerCase()===fname.toLowerCase().replace(/\.csv$/i,$')));
+    const find=fname=>files.find(f=>f.name&&(f.name.toLowerCase()===fname.toLowerCase()||f.name.toLowerCase()===fname.toLowerCase().replace(/\.csv$/i,'')));
 
     const csv={};const missing=[];
     for(const {key,id} of fileCfg){
@@ -348,12 +348,14 @@ async function loadData(){
       catch(e){missing.push(key);}
     }
 
+    // Load spiffs JSON
     const spiffFname=document.getElementById('cfg-spiff').value.trim();
     const spiffFile=find(spiffFname);
     if(spiffFile){
       try{const sj=await callDrive(`Return the raw JSON text of Google Drive file ID: ${spiffFile.id}.`);const m=sj.match(/\[[\s\S]*\]/);if(m)state.spiffs=JSON.parse(m[0]);}catch(e){}
     }
 
+    // Load commission statement
     const stmtFname=document.getElementById('cfg-stmt').value.trim();
     const stmtFile=find(stmtFname);
     state.stmtRows=[];
@@ -520,6 +522,7 @@ function renderRecon(){
   const sel=document.getElementById('recon-month');
   if(sel.options.length<=1){MONTHS.forEach((m,i)=>sel.add(new Option(m,String(i))));}
 
+  // Build stmt lookup by proj+month
   const stmtLookup={};
   state.stmtRows.forEach(r=>{
     const k=r.project+'|'+r.monthIdx;
@@ -535,7 +538,7 @@ function renderRecon(){
     const allMonths=new Set([
       ...Object.keys(d.months||{}).map(Number),
       ...state.stmtRows.filter(r=>r.project===d.name).map(r=>r.monthIdx)
-     ]);
+    ]);
     allMonths.forEach(mi=>{
       if(isNaN(mi)||mi<0)return;
       if(monthF!==null&&mi!==monthF)return;
@@ -560,28 +563,6 @@ function renderRecon(){
       <th class="left">Deal</th><th class="left">Type</th><th class="left">Month</th>
       <th>Proj GM</th><th>My comm</th><th>Stmt net GM</th><th>Stmt comm</th><th>Delta</th><th class="left">Project type</th><th>Spiff</th>
     </tr></thead>
-    <tbody>${rows.sort((a,b)=>a.month-b.month||(a.name>b.name?1:-1)).map(r=>`<tr>
-      <td class="deal-name" title="${r.name}">${r.name}</td>
-      <td><span class="badge badge-${r.type}">${r.type}</span></td>
-      <td class="left">${MONTHS[r.month]||'—'}</td>
-      <td>${fmt(r.projGm)}</td>
-      <td>${fmt(r.myComm)}</td>
-      <td>${fmt(r.stmtNetGm)}</td>
-      <td>${fmt(r.stmtComm)}</td>
-      <td>${fmtD(r.delta)}</td>
-      <td class="left" style="color:#888;font-size:10px;">${r.projType||'—'}</td>
-      <td style="text-align:center;">${r.spiff?'<span class="badge badge-spiff">spiff</span>':''}</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
-}
-
-renderTiers();
-renderSample();
-</script>
-</div>
-</body>
-</html>
-  </tr></thead>
     <tbody>${rows.sort((a,b)=>a.month-b.month||(a.name>b.name?1:-1)).map(r=>`<tr>
       <td class="deal-name" title="${r.name}">${r.name}</td>
       <td><span class="badge badge-${r.type}">${r.type}</span></td>
