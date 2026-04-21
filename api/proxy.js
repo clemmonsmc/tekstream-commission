@@ -11,60 +11,59 @@ export default async function handler(req, res) {
         grant_type: 'refresh_token'
       })
     });
-    const tokenData = await tokenResp.json();
-    const accessToken = tokenData.access_token;
-    if (!accessToken) return res.status(500).json({ error: 'Failed to get Google access token', details: tokenData });
+    const { access_token: accessToken, error: tokenError } = await tokenResp.json();
+    if (!accessToken) return res.status(500).json({ error: 'Token error: ' + tokenError });
 
     const { action, folderId, fileId, fileName, content, sheetName } = req.body;
+    const auth = { 'Authorization': 'Bearer ' + accessToken };
 
     if (action === 'list') {
-      const r = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      const r = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100", { headers: auth });
       return res.json(await r.json());
     }
 
     if (action === 'get') {
-      const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media", { headers: auth });
       return res.json({ content: await r.text() });
     }
 
     if (action === 'getSheetCSV') {
-      // Export a specific sheet from an Excel/Sheets file as CSV using Drive export
-      // First get the file metadata to find sheet IDs
-      const metaR = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?fields=id,name,mimeType", { headers: { 'Authorization': 'Bearer ' + accessToken } });
-      const meta = await metaR.json();
-      
-      // If it's an xlsx, we need to use the Sheets API - first check if it has a Sheets version
-      // Export as CSV for a specific sheet by name using the export URL
-      // Drive allows exporting XLSX as CSV but only for the first sheet
-      // For multi-sheet, we use the Sheets API gid parameter
-      
-      // Get sheet list via Sheets API
-      const sheetsMetaR = await fetch("https://sheets.googleapis.com/v4/spreadsheets/" + fileId + "?fields=sheets.properties", { headers: { 'Authorization': 'Bearer ' + accessToken } });
-      const sheetsMeta = await sheetsMetaR.json();
-      
-      if (sheetsMeta.error) {
-        // File might be xlsx not native Sheets - try direct export
-        const csvR = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "/export?mimeType=text%2Fcsv", { headers: { 'Authorization': 'Bearer ' + accessToken } });
-        return res.json({ csv: await csvR.text(), sheets: [] });
+      // Copy the xlsx as a native Google Sheet, read CSV, delete copy
+      const copyResp = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '/copy', {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '_tmp_stmt_' + Date.now(), mimeType: 'application/vnd.google-apps.spreadsheet' })
+      });
+      const copy = await copyResp.json();
+      if (copy.error) return res.status(500).json({ error: 'Copy failed: ' + copy.error.message });
+
+      const copyId = copy.id;
+      try {
+        // Get sheet list
+        const metaR = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + copyId + '?fields=sheets.properties', { headers: auth });
+        const meta = await metaR.json();
+        const sheets = meta.sheets?.map(s => ({ name: s.properties.title, gid: s.properties.sheetId })) || [];
+
+        // Find requested sheet
+        const target = sheets.find(s => s.name === sheetName) || sheets.find(s => s.name.includes(String(sheetName))) || sheets[0];
+        if (!target) return res.json({ csv: '', sheets: sheets.map(s => s.name) });
+
+        // Export as CSV
+        const csvR = await fetch('https://docs.google.com/spreadsheets/d/' + copyId + '/export?format=csv&gid=' + target.gid, { headers: auth });
+        const csv = await csvR.text();
+
+        return res.json({ csv, sheets: sheets.map(s => s.name), sheetName: target.name });
+      } finally {
+        // Always delete the temp copy
+        await fetch('https://www.googleapis.com/drive/v3/files/' + copyId, { method: 'DELETE', headers: auth });
       }
-
-      const sheets = sheetsMeta.sheets?.map(s => ({ name: s.properties.title, gid: s.properties.sheetId })) || [];
-      
-      // Find requested sheet
-      const targetSheet = sheets.find(s => s.name === sheetName) || sheets[0];
-      if (!targetSheet) return res.json({ csv: '', sheets: sheets.map(s => s.name) });
-
-      // Export that specific sheet as CSV
-      const csvR = await fetch("https://docs.google.com/spreadsheets/d/" + fileId + "/export?format=csv&gid=" + targetSheet.gid, { headers: { 'Authorization': 'Bearer ' + accessToken } });
-      const csv = await csvR.text();
-      return res.json({ csv, sheets: sheets.map(s => s.name), sheetName: targetSheet.name });
     }
 
     if (action === 'save') {
-      const listR = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+name='" + fileName + "'+and+trashed=false&fields=files(id)", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      const listR = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+name='" + fileName + "'+and+trashed=false&fields=files(id)", { headers: auth });
       const existingId = (await listR.json()).files?.[0]?.id;
-      const uploadId = existingId || (await (await fetch('https://www.googleapis.com/drive/v3/files', { method: 'POST', headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fileName, parents: [folderId] }) })).json()).id;
-      await fetch("https://www.googleapis.com/upload/drive/v3/files/" + uploadId + "?uploadType=media", { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: content });
+      const uploadId = existingId || (await (await fetch('https://www.googleapis.com/drive/v3/files', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fileName, parents: [folderId] }) })).json()).id;
+      await fetch('https://www.googleapis.com/upload/drive/v3/files/' + uploadId + '?uploadType=media', { method: 'PATCH', headers: { ...auth, 'Content-Type': 'application/json' }, body: content });
       return res.json({ ok: true });
     }
 
