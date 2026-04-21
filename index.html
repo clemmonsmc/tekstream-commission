@@ -104,14 +104,14 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
       <button class="year-tab" onclick="switchYear(2025)">2025</button>
     </div>
     <button class="refresh-btn" id="refresh-btn" onclick="loadData()">
-      <span id="refresh-icon">↻</span> Refresh data
+      <span id="refresh-icon">â»</span> Refresh data
     </button>
   </div>
 </div>
 
 <div class="status-bar">
   <div class="status-dot ok" id="status-dot"></div>
-  <span id="status-text">Ready — click Refresh to load live data from Google Drive.</span>
+  <span id="status-text">Ready â click Refresh to load live data from Google Drive.</span>
 </div>
 
 <div class="tabs">
@@ -125,25 +125,25 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 <!-- OVERVIEW -->
 <div id="tab-overview">
   <div class="metrics-grid">
-    <div class="metric-card"><div class="metric-label">Projected comm</div><div class="metric-value" id="m-proj">—</div><div class="metric-sub">Full year est.</div></div>
-    <div class="metric-card"><div class="metric-label">Stmt comm (YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub">Per accounting</div></div>
-    <div class="metric-card"><div class="metric-label">Invoiced comm</div><div class="metric-value" id="m-inv">—</div><div class="metric-sub">Billed to date</div></div>
-    <div class="metric-card"><div class="metric-label">Cash received</div><div class="metric-value" id="m-paid">—</div><div class="metric-sub">Customer paid</div></div>
+    <div class="metric-card"><div class="metric-label">Projected comm</div><div class="metric-value" id="m-proj">â</div><div class="metric-sub">Full year est.</div></div>
+    <div class="metric-card"><div class="metric-label">Stmt comm (YTD)</div><div class="metric-value" id="m-stmt">â</div><div class="metric-sub">Per accounting</div></div>
+    <div class="metric-card"><div class="metric-label">Invoiced comm</div><div class="metric-value" id="m-inv">â</div><div class="metric-sub">Billed to date</div></div>
+    <div class="metric-card"><div class="metric-label">Cash received</div><div class="metric-value" id="m-paid">â</div><div class="metric-sub">Customer paid</div></div>
   </div>
 
   <div class="section">
     <div class="section-title">A/R waterfall</div>
     <div class="waterfall">
-      <div class="wf-stage"><div class="wf-label">Projected</div><div class="wf-value" id="wf-proj">—</div><div class="wf-gap" style="color:#999;">Full year</div></div>
-      <div class="wf-stage"><div class="wf-label">Stmt (YTD)</div><div class="wf-value" id="wf-stmt">—</div><div class="wf-gap" id="wf-gap1">—</div></div>
-      <div class="wf-stage"><div class="wf-label">Invoiced</div><div class="wf-value" id="wf-inv">—</div><div class="wf-gap" id="wf-gap2">—</div></div>
-      <div class="wf-stage"><div class="wf-label">Cash received</div><div class="wf-value" id="wf-paid">—</div><div class="wf-gap" id="wf-gap3">—</div></div>
+      <div class="wf-stage"><div class="wf-label">Projected</div><div class="wf-value" id="wf-proj">â</div><div class="wf-gap" style="color:#999;">Full year</div></div>
+      <div class="wf-stage"><div class="wf-label">Stmt (YTD)</div><div class="wf-value" id="wf-stmt">â</div><div class="wf-gap" id="wf-gap1">â</div></div>
+      <div class="wf-stage"><div class="wf-label">Invoiced</div><div class="wf-value" id="wf-inv">â</div><div class="wf-gap" id="wf-gap2">â</div></div>
+      <div class="wf-stage"><div class="wf-label">Cash received</div><div class="wf-value" id="wf-paid">â</div><div class="wf-gap" id="wf-gap3">â</div></div>
     </div>
   </div>
 
   <div class="two-col">
     <div class="section">
-      <div class="section-title">By type — projected GM</div>
+      <div class="section-title">By type â projected GM</div>
       <div id="type-breakdown"><div style="font-size:11px;color:#999;">Load data to see breakdown</div></div>
     </div>
     <div>
@@ -228,7 +228,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     <div class="config-row"><label>GM pivot CSV</label><input type="text" id="cfg-gm" value="commission_calc__gross_margin_report_pivot.csv" /></div>
     <div class="config-row"><label>Commission statement</label><input type="text" id="cfg-stmt" value="commission_statement.xlsx" /></div>
     <div class="config-row"><label>Spiff list (JSON)</label><input type="text" id="cfg-spiff" value="commission_spiffs.json" /></div>
-    <button class="config-save" onclick="setStatus('ok','Settings updated — click Refresh to reload data.')">Save settings</button>
+    <button class="config-save" onclick="setStatus('ok','Settings updated â click Refresh to reload data.')">Save settings</button>
   </div>
 </div>
 
@@ -240,7 +240,7 @@ const SW_TIERS  = [{f:-9999999,t:200000,r:0.20},{f:200001,t:400000,r:0.25},{f:40
 let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[] };
 
 function fmt(n) {
-  if(n===null||n===undefined||isNaN(n))return '—';
+  if(n===null||n===undefined||isNaN(n))return 'â';
   const a=Math.abs(n),s=n<0?'-':'';
   if(a>=1000000)return s+'$'+(a/1000000).toFixed(2)+'M';
   if(a>=1000)return s+'$'+Math.round(a).toLocaleString();
@@ -248,7 +248,7 @@ function fmt(n) {
 }
 function fmtD(n,thr=0.5) {
   if(!n&&n!==0)return '';
-  if(Math.abs(n)<thr)return '<span style="color:#ccc;">—</span>';
+  if(Math.abs(n)<thr)return '<span style="color:#ccc;">â</span>';
   const cls=n>0?'delta-pos':'delta-neg',s=n>0?'+':'';
   return `<span class="${cls}">${s}${fmt(n)}</span>`;
 }
@@ -276,7 +276,7 @@ function switchYear(y){
 }
 
 function renderTiers(){
-  const r=(tiers,id)=>{document.getElementById(id).innerHTML=tiers.map(t=>`<tr><td class="left">${t.f<0?'$0':'$'+t.f.toLocaleString()}</td><td class="left">${t.t>1e8?'∞':'$'+t.t.toLocaleString()}</td><td>${(t.r*100).toFixed(0)}%</td></tr>`).join('');};
+  const r=(tiers,id)=>{document.getElementById(id).innerHTML=tiers.map(t=>`<tr><td class="left">${t.f<0?'$0':'$'+t.f.toLocaleString()}</td><td class="left">${t.t>1e8?'â':'$'+t.t.toLocaleString()}</td><td>${(t.r*100).toFixed(0)}%</td></tr>`).join('');};
   r(SVC_TIERS,'tier-svc');r(SW_TIERS,'tier-sw');
 }
 
@@ -285,7 +285,7 @@ function renderSpiffTable(){
     <td><input type="text" value="${s.name||''}" onchange="state.spiffs[${i}].name=this.value" style="width:100%;" /></td>
     <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.commSpiff||1}" onchange="state.spiffs[${i}].commSpiff=parseFloat(this.value)||1" style="width:55px;text-align:right;" /></td>
     <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.gmSpiff||0.5}" onchange="state.spiffs[${i}].gmSpiff=parseFloat(this.value)||0.5" style="width:55px;text-align:right;" /></td>
-    <td style="text-align:center;"><button class="spiff-del" onclick="state.spiffs.splice(${i},1);renderSpiffTable()">×</button></td>
+    <td style="text-align:center;"><button class="spiff-del" onclick="state.spiffs.splice(${i},1);renderSpiffTable()">Ã</button></td>
   </tr>`).join('');
 }
 function addSpiffRow(){state.spiffs.push({name:'',commSpiff:1,gmSpiff:0.5});renderSpiffTable();showTab('spiffs');}
@@ -303,7 +303,7 @@ async function saveSpiffsToDrive(){
 }
 
 async function callDrive(prompt){
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
+  const res=await fetch("/api/proxy",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:prompt}],mcp_servers:[{type:"url",url:"https://drivemcp.googleapis.com/mcp/v1",name:"gdrive"}]})
   });
@@ -320,7 +320,7 @@ function monthIdx(s){
 
 async function loadData(){
   const btn=document.getElementById('refresh-btn'),icon=document.getElementById('refresh-icon');
-  btn.classList.add('loading');icon.className='spin';icon.textContent='↻';
+  btn.classList.add('loading');icon.className='spin';icon.textContent='â»';
   setStatus('loading','Connecting to Google Drive...');
   loadSpiffsLocal();
 
@@ -381,13 +381,13 @@ async function loadData(){
     processCSVs(csv);
     renderSpiffTable();
     renderDashboard();
-    const note=missing.length?` — missing: ${missing.join(', ')}`:' — all files loaded';
+    const note=missing.length?` â missing: ${missing.join(', ')}`:' â all files loaded';
     setStatus('ok',`Live data from Drive${note}. Refreshed ${new Date().toLocaleTimeString()}`);
   }catch(err){
     setStatus('err','Drive error: '+err.message+'. Showing sample data.');
     renderSample();
   }finally{
-    btn.classList.remove('loading');icon.className='';icon.textContent='↻';
+    btn.classList.remove('loading');icon.className='';icon.textContent='â»';
   }
 }
 
@@ -505,10 +505,10 @@ function renderMonthly(){
   document.getElementById('monthly-wrap').innerHTML=`<table>
     <thead><tr><th class="left">Metric</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>
-      <tr><td class="left">Proj GM</td>${mGm.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mGm.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr><td class="left">Proj comm</td>${mProj.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProj.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr><td class="left">Stmt comm</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Proj GM</td>${mGm.map(v=>`<td>${v?fmt(v):'â'}</td>`).join('')}<td>${fmt(mGm.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Proj comm</td>${mProj.map(v=>`<td>${v?fmt(v):'â'}</td>`).join('')}<td>${fmt(mProj.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Stmt comm</td>${mStmt.map(v=>`<td>${v?fmt(v):'â'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr class="subtotal"><td class="left">Delta (stmt â proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
     </tbody></table>`;
 }
 
@@ -566,13 +566,13 @@ function renderRecon(){
     <tbody>${rows.sort((a,b)=>a.month-b.month||(a.name>b.name?1:-1)).map(r=>`<tr>
       <td class="deal-name" title="${r.name}">${r.name}</td>
       <td><span class="badge badge-${r.type}">${r.type}</span></td>
-      <td class="left">${MONTHS[r.month]||'—'}</td>
+      <td class="left">${MONTHS[r.month]||'â'}</td>
       <td>${fmt(r.projGm)}</td>
       <td>${fmt(r.myComm)}</td>
       <td>${fmt(r.stmtNetGm)}</td>
       <td>${fmt(r.stmtComm)}</td>
       <td>${fmtD(r.delta)}</td>
-      <td class="left" style="color:#888;font-size:10px;">${r.projType||'—'}</td>
+      <td class="left" style="color:#888;font-size:10px;">${r.projType||'â'}</td>
       <td style="text-align:center;">${r.spiff?'<span class="badge badge-spiff">spiff</span>':''}</td>
     </tr>`).join('')}</tbody>
   </table>`;
