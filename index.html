@@ -363,26 +363,21 @@ async function loadData(){
     state.stmtRows=[];
     if(stmtFile){
       const yr=state.year;
-      const sheets=[String(yr),String(yr)+' Licenses'];
-      for(const sheetName of sheets){
+      for(const sheetName of [String(yr),String(yr)+' Licenses']){
         try{
-          const r=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'getSheetCSV',fileId:stmtFile.id,sheetName})});
-          const d=await r.json();
-          if(d.error)throw new Error(d.error);
-          if(d.csv){
-            const csvRows=parseCSV(d.csv);
-            csvRows.forEach(row=>{
-              const project=row['Project']||'';
-              const month=row['Mon']||row['Month']||'';
-              const netGm=parseFloat(row['Net GM Bus Dev']||row['Net GM for Bus Dev']||0)||0;
-              const busComm=parseFloat(row['Bus Dev Cmsn']||row['Bus Dev Comm $']||0)||0;
-              const busPct=parseFloat(row['%']||row['Bus Dev %']||0)||0;
-              const projType=row['Project Type']||'';
-              const paidDate=row['Payment date']||row['Pmt Date']||'';
-              const mi=monthIdx(month);
-              if(project&&mi>=0){state.stmtRows.push({project,monthIdx:mi,month,netGmBusDev:netGm,busCommStmt:busComm,busPct,projectType:projType,paidDate});}
-            });
-          }
+          const sr=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'getSheetCSV',fileId:stmtFile.id,sheetName})});
+          const sd=await sr.json();
+          if(sd.error)throw new Error(sd.error);
+          (parseCSV(sd.csv||'')).forEach(row=>{
+            const project=row['Project']||'',month=row['Mon']||row['Month']||'';
+            const mi=monthIdx(month);
+            if(project&&mi>=0)state.stmtRows.push({project,monthIdx:mi,month,
+              netGmBusDev:parseFloat(row['Net GM Bus Dev']||0)||0,
+              busCommStmt:parseFloat(row['Bus Dev Cmsn']||0)||0,
+              busPct:parseFloat(row['%']||0)||0,
+              projectType:row['Project Type']||'',
+              paidDate:row['Payment date']||''});
+          });
         }catch(e){missing.push('stmt_'+sheetName);}
       }
     }
