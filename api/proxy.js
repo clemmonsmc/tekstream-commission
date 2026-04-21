@@ -1,8 +1,6 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
   try {
-    // Get fresh Google access token using refresh token
     const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -15,66 +13,37 @@ export default async function handler(req, res) {
     });
     const tokenData = await tokenResp.json();
     const accessToken = tokenData.access_token;
-    if (!accessToken) return res.status(401).json({ error: 'Failed to get Google access token', details: tokenData });
-
-    const { action, folderId, fileId, fileName } = req.body;
-
-    // LIST files in a folder
+    if (!accessToken) return res.status(500).json({ error: 'Failed to get Google access token', details: tokenData });
+    const { action, folderId, fileId, fileName, content, base64, prompt } = req.body;
     if (action === 'list') {
-      const r = await fetch(`https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents&fields=files(id,name,mimeType,size)&pageSize=100`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      const d = await r.json();
-      return res.json(d);
+      const r = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      return res.json(await r.json());
     }
-
-    // DOWNLOAD a file by ID (CSV/JSON = export as text, XLSX = download as binary base64)
-    if (action === 'download') {
-      const metaResp = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=name,mimeType`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      const meta = await metaResp.json();
-      const mimeType = meta.mimeType || '';
-
-      let downloadUrl;
-      if (mimeType.includes('spreadsheet') || mimeType.includes('google-apps')) {
-        downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv`;
-      } else {
-        downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-      }
-
-      const fileResp = await fetch(downloadUrl, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-
-      // For XLSX files return base64, otherwise return text
-      if (mimeType.includes('spreadsheetml') || (fileName && fileName.endsWith('.xlsx'))) {
-        const buffer = await fileResp.arrayBuffer();
-        const base64 = Buffer.from(buffer).toString('base64');
-        return res.json({ type: 'xlsx', base64, name: meta.name });
-      } else {
-        const text = await fileResp.text();
-        return res.json({ type: 'text', content: text, name: meta.name });
-      }
+    if (action === 'get') {
+      const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      return res.json({ content: await r.text() });
     }
-
-    // ANTHROPIC call (for XLSX parsing)
-    if (action === 'anthropic') {
+    if (action === 'getExcel') {
+      const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      return res.json({ base64: Buffer.from(await r.arrayBuffer()).toString('base64') });
+    }
+    if (action === 'parseExcel') {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify(req.body.payload)
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: base64 } }, { type: 'text', text: prompt }] }] })
       });
-      const d = await r.json();
-      return res.json(d);
+      return res.json(await r.json());
     }
-
-    res.status(400).json({ error: 'Unknown action' });
+    if (action === 'save') {
+      const listR = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+name='" + fileName + "'+and+trashed=false&fields=files(id)", { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      const existingId = (await listR.json()).files?.[0]?.id;
+      const uploadId = existingId || (await (await fetch('https://www.googleapis.com/drive/v3/files', { method: 'POST', headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fileName, parents: [folderId] }) })).json()).id;
+      await fetch("https://www.googleapis.com/upload/drive/v3/files/" + uploadId + "?uploadType=media", { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: content });
+      return res.json({ ok: true });
+    }
+    return res.status(400).json({ error: 'Unknown action: ' + action });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 }
