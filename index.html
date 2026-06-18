@@ -251,7 +251,7 @@ const SW_TIERS  = [{f:-9999999,t:200000,r:0.20},{f:200001,t:400000,r:0.25},{f:40
 let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[] };
 
 // ===== Supabase integration (auth, spiffs, snapshot cache, deltas) =====
-let _sb=null, _user=null, _lastRefreshed=null;
+let _sb=null, _user=null, _lastRefreshed=null, _loaded=false;
 const TS_DOMAIN='@tekstream.com';
 
 function _gateMsg(m){const el=document.getElementById('gate-msg');if(el)el.textContent=m||'';}
@@ -270,21 +270,23 @@ async function _signIn(){
   await _sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}});
 }
 async function _signOut(){ if(_sb){await _sb.auth.signOut();} }
-async function _applySession(session){
+function _applySession(session){
   const email=(session&&session.user&&session.user.email)||'';
   if(session&&email){
     if(!email.toLowerCase().endsWith(TS_DOMAIN)){
       _gateMsg('Use a '+TS_DOMAIN+' account.');
-      await _sb.auth.signOut();
+      setTimeout(()=>{ if(_sb)_sb.auth.signOut(); },0);
       return;
     }
     _user=session.user;
     document.getElementById('authGate').style.display='none';
     const se=document.getElementById('signout-btn');if(se)se.style.display='';
     const ae=document.getElementById('auth-email');if(ae)ae.textContent=email;
-    await _onSignedIn();
+    // Defer the data load OUTSIDE the auth callback (queries fired inside it can deadlock
+    // with token restore on supabase-js). Load once per session.
+    if(!_loaded){ _loaded=true; setTimeout(()=>{ _onSignedIn(); },0); }
   }else{
-    _user=null;
+    _user=null; _loaded=false;
     document.getElementById('authGate').style.display='flex';
     const se=document.getElementById('signout-btn');if(se)se.style.display='none';
     const ae=document.getElementById('auth-email');if(ae)ae.textContent='';
