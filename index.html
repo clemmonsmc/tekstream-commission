@@ -92,8 +92,17 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 .filter-row input { flex: 1; min-width: 150px; }
 .tier-mini td, .tier-mini th { padding: 4px 7px; font-size: 10px; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+<div id="authGate" style="position:fixed;inset:0;background:#f8f8f6;display:flex;align-items:center;justify-content:center;z-index:9999;">
+  <div style="background:#fff;border:1px solid #e0e0d8;border-radius:10px;padding:32px 36px;max-width:360px;text-align:center;">
+    <div style="font-size:16px;font-weight:600;color:#003658;margin-bottom:6px;">TekStream Commission</div>
+    <div style="font-size:12px;color:#888;margin-bottom:20px;">Sign in with your TekStream Google account.</div>
+    <button id="gate-signin" onclick="_signIn()" style="padding:9px 18px;border:none;border-radius:7px;background:#003658;color:#fff;font-size:13px;cursor:pointer;">Sign in with Google</button>
+    <div id="gate-msg" style="font-size:11px;color:#A32D2D;margin-top:14px;min-height:14px;"></div>
+  </div>
+</div>
 <div class="app">
 
 <div class="header">
@@ -106,6 +115,8 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     <button class="refresh-btn" id="refresh-btn" onclick="loadData()">
       <span id="refresh-icon">↻</span> Refresh data
     </button>
+    <span id="auth-email" style="font-size:11px;color:#888;"></span>
+    <button class="year-tab" id="signout-btn" onclick="_signOut()" style="display:none;">Sign out</button>
   </div>
 </div>
 
@@ -207,7 +218,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     </div>
     <button class="add-spiff-btn" onclick="addSpiffRow()">+ Add deal</button>
     <div style="margin-top:10px;">
-      <button class="config-save" onclick="saveSpiffsToDrive()">Save to Drive</button>
+      <button class="config-save" onclick="saveSpiffsToSb()">Save</button>
       <button class="config-save" onclick="saveSpiffsLocal()">Save locally</button>
     </div>
     <div id="spiff-status" style="font-size:11px;color:#888;margin-top:6px;"></div>
@@ -238,6 +249,162 @@ const SVC_TIERS = [{f:-9999999,t:450000,r:0.05},{f:450001,t:750000,r:0.10},{f:75
 const SW_TIERS  = [{f:-9999999,t:200000,r:0.20},{f:200001,t:400000,r:0.25},{f:400001,t:600000,r:0.30},{f:600001,t:800000,r:0.35},{f:800001,t:999999999,r:0.40}];
 
 let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[] };
+
+// ===== Supabase integration (auth, spiffs, snapshot cache, deltas) =====
+let _sb=null, _user=null, _lastRefreshed=null;
+const TS_DOMAIN='@tekstream.com';
+
+function _gateMsg(m){const el=document.getElementById('gate-msg');if(el)el.textContent=m||'';}
+async function _sbInit(){
+  try{
+    const cfg=await (await fetch('/api/config')).json();
+    if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY){_gateMsg('Supabase is not configured (env vars).');return;}
+    _sb=window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    _sb.auth.onAuthStateChange((_e,session)=>_applySession(session));
+    const {data}=await _sb.auth.getSession();
+    _applySession(data.session);
+  }catch(e){_gateMsg('Init failed: '+e.message);}
+}
+async function _signIn(){
+  if(!_sb){_gateMsg('Not ready yet, try again.');return;}
+  await _sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}});
+}
+async function _signOut(){ if(_sb){await _sb.auth.signOut();} }
+async function _applySession(session){
+  const email=(session&&session.user&&session.user.email)||'';
+  if(session&&email){
+    if(!email.toLowerCase().endsWith(TS_DOMAIN)){
+      _gateMsg('Use a '+TS_DOMAIN+' account.');
+      await _sb.auth.signOut();
+      return;
+    }
+    _user=session.user;
+    document.getElementById('authGate').style.display='none';
+    const se=document.getElementById('signout-btn');if(se)se.style.display='';
+    const ae=document.getElementById('auth-email');if(ae)ae.textContent=email;
+    await _onSignedIn();
+  }else{
+    _user=null;
+    document.getElementById('authGate').style.display='flex';
+    const se=document.getElementById('signout-btn');if(se)se.style.display='none';
+    const ae=document.getElementById('auth-email');if(ae)ae.textContent='';
+  }
+}
+async function _onSignedIn(){
+  await loadSpiffsFromSb();
+  renderSpiffTable();
+  await hydrateSnapshot(state.year);
+}
+
+// ---- Spiffs in Supabase (in-memory uses commSpiff/gmSpiff; table uses comm_spiff/gm_spiff) ----
+function _spiffToRow(s){return {name:s.name||'',comm_spiff:parseFloat(s.commSpiff)||1,gm_spiff:parseFloat(s.gmSpiff)||0.5};}
+function _rowToSpiff(r){return {name:r.name||'',commSpiff:parseFloat(r.comm_spiff)||1,gmSpiff:parseFloat(r.gm_spiff)||0.5};}
+async function loadSpiffsFromSb(){
+  if(!_sb||!_user)return false;
+  try{
+    const {data,error}=await _sb.from('commission_spiffs').select('name,comm_spiff,gm_spiff');
+    if(error)throw error;
+    if(data&&data.length){ state.spiffs=data.map(_rowToSpiff); return true; }
+    // one-time migration: empty cloud -> seed from localStorage
+    loadSpiffsLocal();
+    if(state.spiffs&&state.spiffs.length){ await saveSpiffsToSb(true); }
+    return false;
+  }catch(e){ loadSpiffsLocal(); return false; }
+}
+async function saveSpiffsToSb(silent){
+  if(!_sb||!_user){ saveSpiffsLocal(); return; }
+  const st=document.getElementById('spiff-status');
+  try{
+    const rows=state.spiffs.filter(s=>s.name&&s.name.trim()).map(_spiffToRow);
+    if(rows.length){
+      const {error}=await _sb.from('commission_spiffs').upsert(rows,{onConflict:'owner_id,name'});
+      if(error)throw error;
+    }
+    // prune rows removed in the UI
+    const {data:existing}=await _sb.from('commission_spiffs').select('name');
+    const cur=new Set(rows.map(r=>r.name));
+    const toDelete=(existing||[]).map(r=>r.name).filter(n=>!cur.has(n));
+    if(toDelete.length){ await _sb.from('commission_spiffs').delete().in('name',toDelete); }
+    saveSpiffsLocal();
+    if(!silent&&st)st.textContent='Saved to your account.';
+  }catch(e){ saveSpiffsLocal(); if(!silent&&st)st.textContent='Cloud save failed (saved locally): '+e.message; }
+}
+
+// ---- Snapshot: cached read-model so the dashboard loads without a Drive hit ----
+function _snapshotData(){
+  return { year:state.year, deals:state.deals, stmtRows:state.stmtRows, invoiceRows:state.invoiceRows, paymentRows:state.paymentRows, gmRows:state.gmRows };
+}
+async function hydrateSnapshot(year){
+  if(!_sb||!_user)return false;
+  try{
+    const {data,error}=await _sb.from('commission_snapshot').select('captured_at,data').eq('year',year).maybeSingle();
+    if(error)throw error;
+    if(data&&data.data){
+      const d=data.data;
+      state.deals=d.deals||[]; state.stmtRows=d.stmtRows||[]; state.invoiceRows=d.invoiceRows||[];
+      state.paymentRows=d.paymentRows||[]; state.gmRows=d.gmRows||[];
+      _lastRefreshed=data.captured_at;
+      renderDashboard();
+      setStatus('ok','Loaded saved data'+(_lastRefreshed?' from '+new Date(_lastRefreshed).toLocaleString():'')+'. Click Refresh to pull the latest from Drive.');
+      return true;
+    }
+    state.deals=[];state.stmtRows=[];state.invoiceRows=[];state.paymentRows=[];state.gmRows=[];
+    renderDashboard();
+    setStatus('ok','No saved data for '+year+'. Click Refresh to import from Drive.');
+    return false;
+  }catch(e){ setStatus('err','Could not load saved data: '+e.message); return false; }
+}
+async function readPriorGmRows(year){
+  if(!_sb||!_user)return [];
+  try{ const {data}=await _sb.from('commission_snapshot').select('data').eq('year',year).maybeSingle(); return (data&&data.data&&data.data.gmRows)||[]; }
+  catch(e){ return []; }
+}
+async function writeSnapshot(){
+  if(!_sb||!_user)return;
+  try{
+    await _sb.from('commission_snapshot').upsert({year:state.year,captured_at:new Date().toISOString(),data:_snapshotData()},{onConflict:'owner_id,year'});
+    _lastRefreshed=new Date().toISOString();
+  }catch(e){/* non-fatal: dashboard still works from memory */}
+}
+
+// ---- Deltas: hub read-model. A=recon (app GM vs stmt Net GM Bus Dev), B=revrec movement vs prior refresh ----
+function _byProjectRevrec(gmRows){
+  const m={}; (gmRows||[]).forEach(r=>{ if(!r.proj)return; m[r.proj]=(m[r.proj]||0)+(r.gm||0); }); return m;
+}
+function _byProjectStmtNetGm(stmtRows){
+  const m={}; (stmtRows||[]).forEach(r=>{ if(!r.project)return; m[r.project]=(m[r.project]||0)+(r.netGmBusDev||0); }); return m;
+}
+async function computeAndWriteDeltas(priorGmRows){
+  if(!_sb||!_user)return;
+  const cur=_byProjectRevrec(state.gmRows);
+  const prior=_byProjectRevrec(priorGmRows||[]);
+  const stmt=_byProjectStmtNetGm(state.stmtRows);
+  const havePrior=(priorGmRows&&priorGmRows.length>0);
+  const typeOf={}; state.deals.forEach(d=>{ if(!(d.name in typeOf)) typeOf[d.name]=d.type; });
+  const active=new Set();
+  state.deals.forEach(d=>{ if((d.projGm||0)!==0) active.add(d.name); });
+  Object.keys(cur).forEach(p=>{ if(cur[p]!==0) active.add(p); });
+  const rows=[];
+  active.forEach(p=>{
+    const type=typeOf[p]||null;
+    if(p in stmt){
+      const gmCur=cur[p]||0, gmRef=stmt[p]||0;
+      rows.push({year:state.year,project:p,type,kind:'recon',gm_current:gmCur,gm_reference:gmRef,delta:gmCur-gmRef,active:true,is_new:false});
+    }
+    const gmCurB=cur[p]||0;
+    if(!havePrior || !(p in prior)){
+      rows.push({year:state.year,project:p,type,kind:'revrec_move',gm_current:gmCurB,gm_reference:null,delta:null,active:true,is_new:true});
+    }else{
+      const gmRefB=prior[p]||0;
+      rows.push({year:state.year,project:p,type,kind:'revrec_move',gm_current:gmCurB,gm_reference:gmRefB,delta:gmCurB-gmRefB,active:true,is_new:false});
+    }
+  });
+  try{
+    await _sb.from('commission_deltas').delete().eq('year',state.year);
+    for(let i=0;i<rows.length;i+=200){ await _sb.from('commission_deltas').insert(rows.slice(i,i+200)); }
+  }catch(e){/* non-fatal */}
+}
+// ===== end Supabase integration =====
 
 function fmt(n) {
   if(n===null||n===undefined||isNaN(n))return '—';
@@ -272,7 +439,7 @@ function showTab(name){
 function switchYear(y){
   state.year=y;
   document.querySelectorAll('.year-tab').forEach((el,i)=>{el.classList.toggle('active',[2026,2025][i]===y);});
-  renderDashboard();
+  if(_sb&&_user){ hydrateSnapshot(y); } else { renderDashboard(); }
 }
 
 function renderTiers(){
@@ -321,7 +488,7 @@ async function loadData(){
   const btn=document.getElementById('refresh-btn'),icon=document.getElementById('refresh-icon');
   btn.classList.add('loading');icon.className='spin';icon.textContent='↻';
   setStatus('loading','Connecting to Google Drive...');
-  loadSpiffsLocal();
+  const _priorGmRows = await readPriorGmRows(state.year);
 
   const fid=document.getElementById('cfg-folder').value.trim();
   const fileCfg=[
@@ -345,11 +512,13 @@ async function loadData(){
       catch(e){missing.push(key);}
     }
 
-    // Load spiffs JSON
-    const spiffFname=document.getElementById('cfg-spiff').value.trim();
-    const spiffFile=find(spiffFname);
-    if(spiffFile){
-      try{const sj=await driveGet(spiffFile.id);const m=sj.match(/\[[\s\S]*\]/);if(m)state.spiffs=JSON.parse(m[0]);}catch(e){}
+    // Spiffs now live in Supabase. Only seed from the Drive JSON if cloud is empty (one-time migration).
+    if(!state.spiffs||!state.spiffs.length){
+      const spiffFname=document.getElementById('cfg-spiff').value.trim();
+      const spiffFile=find(spiffFname);
+      if(spiffFile){
+        try{const sj=await driveGet(spiffFile.id);const m=sj.match(/\[[\s\S]*\]/);if(m){const ds=JSON.parse(m[0]);if(ds.length){state.spiffs=ds;await saveSpiffsToSb(true);}}}catch(e){}
+      }
     }
 
     // Load commission statement
@@ -382,8 +551,10 @@ async function loadData(){
     processCSVs(csv);
     renderSpiffTable();
     renderDashboard();
+    await writeSnapshot();
+    await computeAndWriteDeltas(_priorGmRows);
     const note=missing.length?` — missing: ${missing.join(', ')}`:' — all files loaded';
-    setStatus('ok',`Live data from Drive${note}. Refreshed ${new Date().toLocaleTimeString()}`);
+    setStatus('ok',`Live data from Drive${note}. Saved + refreshed ${new Date().toLocaleTimeString()}`);
   }catch(err){
     setStatus('err','Drive error: '+err.message+'. Showing sample data.');
     renderSample();
@@ -599,7 +770,7 @@ function renderRecon(){
 }
 
 renderTiers();
-renderSample();
+_sbInit();
 </script>
 </div>
 </body>
