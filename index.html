@@ -314,12 +314,12 @@ async function _onSignedIn(){
 }
 
 // ---- Spiffs in Supabase (in-memory uses commSpiff/gmSpiff; table uses comm_spiff/gm_spiff) ----
-function _spiffToRow(s){return {name:s.name||'',comm_spiff:parseFloat(s.commSpiff)||1,gm_spiff:parseFloat(s.gmSpiff)||0.5};}
+function _spiffToRow(s){return {name:s.name||'',comm_spiff:parseFloat(s.commSpiff)||1,gm_spiff:parseFloat(s.gmSpiff)||0.5,note:s.note||null};}
 function _rowToSpiff(r){return {name:r.name||'',commSpiff:parseFloat(r.comm_spiff)||1,gmSpiff:parseFloat(r.gm_spiff)||0.5};}
 async function loadSpiffsFromSb(){
   if(!_sb||!_user)return false;
   try{
-    const {data,error}=await _sb.from('commission_spiffs').select('name,comm_spiff,gm_spiff');
+    const {data,error}=await _sb.from('commission_spiffs').select('name,comm_spiff,gm_spiff,note');
     if(error)throw error;
     if(data&&data.length){ state.spiffs=data.map(_rowToSpiff); return true; }
     // one-time migration: empty cloud -> seed from localStorage
@@ -545,11 +545,9 @@ function renderSpiffReview(){
         const prev=rev.detected_gm_spiff;
         if(prev!=null && Math.abs(d.detected-prev)<=SPIFF_TOL) return;
       }
-      // approved with same detected value -> nothing to do
-      if(rev.status==='approved'){
-        const prev=rev.applied_gm_spiff;
-        if(prev!=null && Math.abs(d.detected-prev)<=SPIFF_TOL) return;
-      }
+      // 'approved' is NOT suppressed here: detectSpiffDiscrepancies already compared the
+      // detected ratio to the LIVE spiff value, so if it still shows a discrepancy the spiff
+      // drifted (or was changed) and should resurface. 'deleted' rows don't suppress either.
     }
     actionable.push(d);
   });
@@ -597,6 +595,23 @@ function renderSpiffReview(){
     anomalies.forEach(d=>{ html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+(d.detected*100).toFixed(0)+'%</td></tr>'; });
     html+='</tbody></table></div>';
   }
+  // Archived / past decisions pile (dismissed, finance-flagged, deleted) with restore + notes.
+  const archived=_spiffReviews.filter(r=>['dismissed','finance_review','deleted'].includes(r.status));
+  if(archived.length){
+    const lbl={dismissed:'Dismissed',finance_review:'Finance review',deleted:'Deleted'};
+    html+='<div class="section-title" style="margin:14px 0 6px;color:#777;cursor:pointer;" onclick="(function(e){var b=document.getElementById(\'spiff-archive-body\');b.style.display=b.style.display===\'none\'?\'\':\'none\';})()">▾ Archived / past decisions ('+archived.length+')</div>';
+    html+='<div id="spiff-archive-body" style="display:none;"><div class="tbl-wrap" style="max-height:none;"><table class="spiff-table"><thead><tr>'
+        +'<th style="width:40%;">Project</th><th>Status</th><th>Detected</th><th style="width:30%;">Note</th><th style="width:120px;">Action</th></tr></thead><tbody>';
+    archived.forEach(r=>{
+      const pe=encodeURIComponent(r.project);
+      html+='<tr><td class="left">'+esc(r.project)+'</td>'
+        +'<td>'+(lbl[r.status]||r.status)+'</td>'
+        +'<td>'+(r.detected_gm_spiff!=null?(r.detected_gm_spiff*100).toFixed(1)+'%':'—')+'</td>'
+        +'<td><input type="text" value="'+esc(r.note||'')+'" placeholder="Note…" style="width:100%;font-size:11px;" onchange="setReviewNote(\''+pe+'\',this.value)" /></td>'
+        +'<td><button class="config-save" style="padding:3px 8px;" onclick="restoreSpiffReview(\''+pe+'\')">Restore</button></td></tr>';
+    });
+    html+='</tbody></table></div></div>';
+  }
   if(!html) html='<div style="font-size:11px;color:#888;">All detected discrepancies have been actioned.</div>';
   wrap.innerHTML=html;
 }
@@ -629,6 +644,29 @@ async function flagSpiffFinance(projEnc,detected,kind,appGm){
   setStatus(ok?'ok':'err',ok?'Flagged "'+project+'" for Finance review.':'Could not flag (sign in?).');
 }
 
+async function setReviewNote(projEnc,note){
+  const project=decodeURIComponent(projEnc);
+  await _upsertReview(project,{note:note});
+  await loadSpiffReviews();
+}
+async function restoreSpiffReview(projEnc){
+  const project=decodeURIComponent(projEnc);
+  const rev=_spiffReviews.find(r=>r.project===project);
+  if(!rev){return;}
+  if(!_sb||!_user){ setStatus('err','Sign in to restore.'); return; }
+  try{
+    if(rev.status==='deleted'){
+      // put the spiff back into the active list at its detected ratio (or 0.5 default)
+      const gm=(rev.detected_gm_spiff!=null&&rev.detected_gm_spiff>0&&rev.detected_gm_spiff<1)?rev.detected_gm_spiff:0.5;
+      await _sb.from('commission_spiffs').upsert([{name:project,comm_spiff:1,gm_spiff:gm}],{onConflict:'owner_id,name'});
+    }
+    // clear the decision so detection re-evaluates cleanly
+    await _sb.from('spiff_reviews').delete().eq('project',project);
+    await loadSpiffsFromSb(); await loadSpiffReviews();
+    renderSpiffTable(); if(_lastCsv){processCSVs(_lastCsv);} renderSpiffReview(); renderDashboard();
+    setStatus('ok','Restored "'+project+'".');
+  }catch(e){ setStatus('err','Restore failed: '+e.message); }
+}
 async function dismissSpiffReview(projEnc,detected,kind,appGm){
   const project=decodeURIComponent(projEnc);
   const ok=await _upsertReview(project,{detected_gm_spiff:detected,app_gm_spiff:(appGm===null?null:appGm),kind,status:'dismissed'});
@@ -636,13 +674,35 @@ async function dismissSpiffReview(projEnc,detected,kind,appGm){
   setStatus(ok?'ok':'err',ok?'Dismissed "'+project+'".':'Could not dismiss (sign in?).');
 }
 
+async function toggleSpiffNote(i){
+  if(state.spiffs[i]) state.spiffs[i]._noteOpen=!state.spiffs[i]._noteOpen;
+  renderSpiffTable();
+}
+async function deleteSpiffRow(i){
+  const s=state.spiffs[i]; if(!s){return;}
+  const name=(s.name||'').trim();
+  state.spiffs.splice(i,1);
+  renderSpiffTable();
+  if(!name)return;                       // blank row: nothing persisted to remove
+  if(!_sb||!_user){ setStatus('err','Sign in to delete from your account; removed from list only.'); return; }
+  try{
+    await _sb.from('commission_spiffs').delete().eq('name',name);
+    // Audit the deletion in the decision pile so it's visible/restorable.
+    await _sb.from('spiff_reviews').upsert({project:name,kind:'remove',status:'deleted',applied_gm_spiff:null},{onConflict:'owner_id,project'});
+    await loadSpiffReviews();
+    if(_lastCsv){processCSVs(_lastCsv);} renderSpiffReview(); renderDashboard();
+    setStatus('ok','Deleted spiff "'+name+'" (archived for restore).');
+  }catch(e){ setStatus('err','Delete failed: '+e.message); }
+}
 function renderSpiffTable(){
   renderSpiffDealOptions();
   document.getElementById('spiff-tbody').innerHTML=state.spiffs.map((s,i)=>`<tr>
     <td><input type="text" list="spiff-deal-options" value="${s.name||''}" onchange="state.spiffs[${i}].name=this.value" placeholder="Type to search deals…" style="width:100%;" /></td>
     <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.commSpiff||1}" onchange="state.spiffs[${i}].commSpiff=parseFloat(this.value)||1" style="width:55px;text-align:right;" /></td>
     <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.gmSpiff||0.5}" onchange="state.spiffs[${i}].gmSpiff=parseFloat(this.value)||0.5" style="width:55px;text-align:right;" /></td>
-    <td style="text-align:center;"><button class="spiff-del" onclick="state.spiffs.splice(${i},1);renderSpiffTable()">×</button></td>
+    <td style="text-align:center;white-space:nowrap;"><button class="spiff-del" title="Note" style="margin-right:4px;" onclick="toggleSpiffNote(${i})">✎</button><button class="spiff-del" onclick="deleteSpiffRow(${i})">×</button></td>
+  </tr>
+  <tr id="spiff-note-${i}" style="display:${s._noteOpen?'':'none'};"><td colspan="4" style="padding:4px 6px 10px;"><input type="text" value="${(s.note||'').replace(/"/g,'&quot;')}" placeholder="Note for this spiff…" onchange="state.spiffs[${i}].note=this.value" style="width:100%;font-size:11px;" /></td>
   </tr>`).join('');
 }
 function addSpiffRow(){state.spiffs.push({name:'',commSpiff:1,gmSpiff:0.5});renderSpiffTable();showTab('spiffs');}
