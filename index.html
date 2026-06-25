@@ -755,9 +755,12 @@ function renderRecon(){
       // No statement commission (missing row or blank value) => no delta to show.
       const hasStmtComm=stmtComm!==0;
       const delta=hasStmtComm?stmtComm-myComm:null;
+      // GM delta: stmt Net GM Bus Dev vs spiff-adjusted projected GM (like-for-like, both BD-attributed).
+      const hasStmtGm=stmtNetGm!==0;
+      const gmDelta=hasStmtGm?stmtNetGm-projGm:null;
       if(flagF==='delta'&&(delta===null||Math.abs(delta)<0.5))return;
       if(flagF==='spiff'&&!d.spiff)return;
-      rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,projType,hasStmt});
+      rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,gmDelta,projType,hasStmt});
     });
   });
 
@@ -767,15 +770,16 @@ function renderRecon(){
   wrap.innerHTML=`<table>
     <thead><tr>
       <th class="left">Deal</th><th class="left">Type</th><th class="left">Month</th>
-      <th>Proj GM</th><th>My comm</th><th>Stmt net GM</th><th>Stmt comm</th><th>Delta</th><th class="left">Project type</th><th>Spiff</th>
+      <th>Proj GM</th><th>Stmt net GM</th><th>GM Δ</th><th>My comm</th><th>Stmt comm</th><th>Comm Δ</th><th class="left">Project type</th><th>Spiff</th>
     </tr></thead>
     <tbody>${rows.sort((a,b)=>a.month-b.month||(a.name>b.name?1:-1)).map(r=>`<tr>
       <td class="deal-name" title="${r.name}">${r.name}</td>
       <td><span class="badge badge-${r.type}">${r.type}</span></td>
       <td class="left">${MONTHS[r.month]||'—'}</td>
       <td>${fmt(r.projGm)}</td>
-      <td>${fmt(r.myComm)}</td>
       <td>${fmt(r.stmtNetGm)}</td>
+      <td>${r.gmDelta===null?'<span style="color:#ccc;">—</span>':fmtD(r.gmDelta)}</td>
+      <td>${fmt(r.myComm)}</td>
       <td>${fmt(r.stmtComm)}</td>
       <td>${r.delta===null?'<span style="color:#ccc;">—</span>':fmtD(r.delta)}</td>
       <td class="left" style="color:#888;font-size:10px;">${r.projType||'—'}</td>
