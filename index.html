@@ -45,6 +45,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #f8f8f6; c
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
 .section-title { font-size: 10px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+    .spiff-section-head { font-size: 14px; font-weight: 700; color: #2c2c2c; text-transform: none; letter-spacing: 0; margin: 16px 0 8px; }
 .section { margin-bottom: 1.25rem; }
 
 .tbl-wrap { overflow-x: auto; max-height: 500px; overflow-y: auto; border: 1px solid #e0e0d8; border-radius: 8px; background: #fff; }
@@ -214,7 +215,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
       Save to Drive to persist across sessions.
     </div>
     <div id="spiff-review" style="margin-bottom:18px;"></div>
-    <div class="section-title" style="margin:18px 0 8px;font-size:13px;">Approved</div>
+    <div class="spiff-section-head">Approved</div>
     <div class="tbl-wrap" style="max-height:none;margin-bottom:10px;">
       <table class="spiff-table">
         <thead><tr><th style="width:40%;">Project name (must match ERP exactly)</th><th style="width:12%;text-align:center;">Comm spiff</th><th style="width:12%;text-align:center;">GM spiff</th><th style="width:28%;">Note</th><th style="width:8%;"></th></tr></thead>
@@ -223,11 +224,10 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     </div>
     <button class="add-spiff-btn" onclick="addSpiffRow()">+ Add Spiff</button>
     <div style="margin-top:10px;">
-      <button class="config-save" id="spiff-save-btn" onclick="saveSpiffsToSb()" disabled title="Sign-in required">Save</button>
-      <button class="config-save" onclick="saveSpiffsLocal()">Save locally</button>
+      <span id="spiff-status" style="font-size:11px;color:#888;"></span>
     </div>
     <div id="spiff-dismissed" style="margin-top:20px;"></div>
-    <div id="spiff-status" style="font-size:11px;color:#888;margin-top:6px;"></div>
+    
   </div>
 </div>
 
@@ -561,7 +561,7 @@ function renderSpiffReview(){
 
   // ===== ACTIVE =====
   const activeCount=actionable.length+pendingFinance.length+anomalies.length;
-  html+='<div class="section-title" style="margin:2px 0 4px;font-size:13px;">Needs attention ('+activeCount+')</div>';
+  html+='<div class="spiff-section-head" style="margin:2px 0 8px;">Needs attention ('+activeCount+')</div>';
   if(!activeCount){
     html+='<div style="font-size:11px;color:#888;margin-bottom:10px;">Nothing to review. Load a statement and Refresh to compare.</div>';
   }
@@ -621,7 +621,7 @@ function renderSpiffReview(){
     const setAside=_spiffReviews.filter(r=>['dismissed','deleted'].includes(r.status));
     if(setAside.length){
       const lbl={dismissed:'Dismissed',deleted:'Removed'};
-      let dh='<div class="section-title" style="margin:0 0 6px;color:#777;cursor:pointer;" onclick="(function(){var b=document.getElementById(\'spiff-dismissed-body\');b.style.display=b.style.display===\'none\'?\'\':\'none\';})()">\u25b8 Dismissed &amp; removed ('+setAside.length+')</div>';
+      let dh='<div class="spiff-section-head" style="margin:16px 0 6px;cursor:pointer;" onclick="(function(){var b=document.getElementById(\'spiff-dismissed-body\');b.style.display=b.style.display===\'none\'?\'\':\'none\';})()">\u25b8 Dismissed &amp; removed ('+setAside.length+')</div>';
       dh+='<div id="spiff-dismissed-body" style="display:none;"><div class="tbl-wrap" style="max-height:none;"><table class="spiff-table"><thead><tr>'
         +'<th style="width:36%;">Project</th><th>Status</th><th>Value</th><th style="width:30%;">Note</th><th style="width:120px;">Action</th></tr></thead><tbody>';
       setAside.forEach(r=>{
@@ -631,13 +631,13 @@ function renderSpiffReview(){
           +'<td>'+(lbl[r.status]||r.status)+'</td>'
           +'<td>'+val+'</td>'
           +'<td>'+noteCell(r.project,r.note)+'</td>'
-          +'<td><button class="config-save" style="padding:3px 8px;" onclick="restoreSpiffReview(\''+pe+'\')">Restore</button></td></tr>';
+          +'<td><button class="config-save" style="padding:3px 10px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="restoreSpiffReview(\''+pe+'\')">Restore</button></td></tr>';
       });
       dh+='</tbody></table></div></div>';
       dwrap.innerHTML=dh;
     } else {
       // Always show the header so the section is discoverable even when empty.
-      dwrap.innerHTML='<div class="section-title" style="margin:0;color:#999;">Dismissed &amp; removed (0)</div>';
+      dwrap.innerHTML='<div class="spiff-section-head" style="margin:16px 0 0;color:#999;">Dismissed &amp; removed (0)</div>';
     }
   }
 }
@@ -725,12 +725,25 @@ async function deleteSpiffRow(i){
 function renderSpiffTable(){
   renderSpiffDealOptions();
   document.getElementById('spiff-tbody').innerHTML=state.spiffs.map((s,i)=>`<tr>
-    <td><input type="text" list="spiff-deal-options" value="${s.name||''}" onchange="state.spiffs[${i}].name=this.value" placeholder="Type to search deals…" style="width:100%;" /></td>
-    <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.commSpiff||1}" onchange="state.spiffs[${i}].commSpiff=parseFloat(this.value)||1" style="width:55px;text-align:right;" /></td>
-    <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.gmSpiff||0.5}" onchange="state.spiffs[${i}].gmSpiff=parseFloat(this.value)||0.5" style="width:55px;text-align:right;" /></td>
-    <td><input type="text" value="${(s.note||'').replace(/"/g,'&quot;')}" placeholder="Note…" onchange="state.spiffs[${i}].note=this.value" style="width:100%;font-size:11px;" /></td>
-    <td style="text-align:center;"><button class="spiff-del" onclick="deleteSpiffRow(${i})">×</button></td>
+    <td><input type="text" list="spiff-deal-options" value="${s.name||''}" onchange="state.spiffs[${i}].name=this.value;scheduleSpiffSave()" placeholder="Type to search deals…" style="width:100%;" /></td>
+    <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.commSpiff||1}" onchange="state.spiffs[${i}].commSpiff=parseFloat(this.value)||1;scheduleSpiffSave()" style="width:55px;text-align:right;" /></td>
+    <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.gmSpiff||0.5}" onchange="state.spiffs[${i}].gmSpiff=parseFloat(this.value)||0.5;scheduleSpiffSave()" style="width:55px;text-align:right;" /></td>
+    <td><input type="text" value="${(s.note||'').replace(/"/g,'&quot;')}" placeholder="Note…" onchange="state.spiffs[${i}].note=this.value;scheduleSpiffSave()" style="width:100%;font-size:11px;" /></td>
+    <td style="text-align:center;"><button class="config-save" style="padding:3px 10px;background:#555;color:#fff;border-color:#555;" onclick="deleteSpiffRow(${i})">Remove</button></td>
   </tr>`).join('');
+}
+let _spiffSaveTimer=null;
+function scheduleSpiffSave(){
+  const st=document.getElementById('spiff-status');
+  if(st)st.textContent='Saving\u2026';
+  clearTimeout(_spiffSaveTimer);
+  _spiffSaveTimer=setTimeout(async ()=>{
+    if(!_sb||!_user){ if(st)st.innerHTML='<span style="color:#A32D2D;">Not signed in \u2014 changes not saved.</span>'; return; }
+    try{
+      await saveSpiffsToSb(true);
+      if(st)st.textContent='Saved '+new Date().toLocaleTimeString();
+    }catch(e){ if(st)st.innerHTML='<span style="color:#A32D2D;">Save failed: '+e.message+'</span>'; }
+  }, 800);
 }
 function addSpiffRow(){state.spiffs.push({name:'',commSpiff:1,gmSpiff:0.5});renderSpiffTable();showTab('spiffs');}
 function saveSpiffsLocal(){try{localStorage.setItem('comm_spiffs',JSON.stringify(state.spiffs));document.getElementById('spiff-status').textContent='Saved locally in browser.';}catch(e){}}
