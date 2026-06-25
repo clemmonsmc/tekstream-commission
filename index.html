@@ -212,6 +212,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
       Your calculated commission is then compared against accounting's statement to surface discrepancies.
       Save to Drive to persist across sessions.
     </div>
+    <div id="spiff-review" style="margin-bottom:18px;"></div>
     <div class="tbl-wrap" style="max-height:none;margin-bottom:10px;">
       <table class="spiff-table">
         <thead><tr><th style="width:58%;">Project name (must match ERP exactly)</th><th style="width:14%;text-align:center;">Comm spiff</th><th style="width:14%;text-align:center;">GM spiff</th><th style="width:14%;"></th></tr></thead>
@@ -253,7 +254,7 @@ const SW_TIERS  = [{f:-9999999,t:200000,r:0.20},{f:200001,t:400000,r:0.25},{f:40
 let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[] };
 
 // ===== Supabase integration (auth, spiffs, snapshot cache, deltas) =====
-let _sb=null, _user=null, _lastRefreshed=null, _loaded=false;
+let _sb=null, _user=null, _lastRefreshed=null, _loaded=false, _lastCsv=null;
 const TS_DOMAIN='@tekstream.com';
 
 function _gateMsg(m){const el=document.getElementById('gate-msg');if(el)el.textContent=m||'';}
@@ -456,7 +457,7 @@ function showTab(name){
   ['overview','monthly','recon','spiffs','config'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===name?'':'none';});
   document.querySelectorAll('.tab').forEach((el,i)=>{el.classList.toggle('active',['overview','monthly','recon','spiffs','config'][i]===name);});
   if(name==='recon')renderRecon();
-  if(name==='spiffs')renderSpiffTable();
+  if(name==='spiffs'){renderSpiffTable();renderSpiffReview();}
 }
 function switchYear(y){
   state.year=y;
@@ -475,6 +476,155 @@ function renderSpiffDealOptions(){
   const names=[...new Set((state.deals||[]).map(d=>d.name).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   dl.innerHTML=names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}"></option>`).join('');
 }
+// ===== Statement-driven spiff detection & review =====
+// Implied GM spiff per project = sum(Net GM Bus Dev) / sum(full GM), aggregated across the
+// project's statement rows. When it differs from the app's gm_spiff (or from 1.0 when no app
+// spiff exists), it's surfaced for approval. Approve writes commission_spiffs; Flag-for-Finance
+// and Dismiss persist in spiff_reviews so they don't resurface. Removals neutralize to 1 (kept for audit).
+const SPIFF_TOL=0.01;       // within 1 percentage point counts as equal
+const SPIFF_MIN_FULLGM=100; // skip projects with negligible full GM to avoid divide noise
+let _spiffReviews=[];       // persisted decisions for this owner
+
+async function loadSpiffReviews(){
+  if(!_sb||!_user){_spiffReviews=[];return;}
+  try{ const {data}=await _sb.from('spiff_reviews').select('*'); _spiffReviews=data||[]; }
+  catch(e){ _spiffReviews=[]; }
+}
+
+// Build the list of detected discrepancies from the current statement rows.
+function detectSpiffDiscrepancies(){
+  const agg={}; // project -> {full, bd}
+  (state.stmtRows||[]).forEach(r=>{
+    if(!r.project)return;
+    if(!agg[r.project])agg[r.project]={full:0,bd:0};
+    agg[r.project].full+=(r.fullGm||0);
+    agg[r.project].bd+=(r.netGmBusDev||0);
+  });
+  const out=[];
+  Object.entries(agg).forEach(([project,a])=>{
+    if(Math.abs(a.full)<SPIFF_MIN_FULLGM)return;           // negligible full GM -> skip
+    const ratio=a.bd/a.full;                               // implied gm_spiff
+    if(!isFinite(ratio)||ratio<=0)return;
+    const sp=getSpiff(project);                            // current app spiff (or undefined)
+    const appGm=sp?(parseFloat(sp.gmSpiff)||0):null;
+    let kind=null;
+    if(!sp){
+      // app has no spiff; flag only if the statement shows a real reduction
+      if(Math.abs(ratio-1)>SPIFF_TOL) kind='add';
+    } else {
+      if(Math.abs(ratio-1)<=SPIFF_TOL){
+        // statement shows full GM this period but app has a spiff -> removal (flag only)
+        kind='remove';
+      } else if(Math.abs(ratio-appGm)>SPIFF_TOL){
+        kind='modify';
+      }
+    }
+    if(kind) out.push({project,detected:ratio,appGm,kind});
+  });
+  return out;
+}
+
+// Combine detection with persisted decisions and render the review panel.
+function renderSpiffReview(){
+  const wrap=document.getElementById('spiff-review');
+  if(!wrap)return;
+  const disc=detectSpiffDiscrepancies();
+  const byProj={}; _spiffReviews.forEach(r=>{byProj[r.project]=r;});
+
+  const actionable=[], pendingFinance=[];
+  disc.forEach(d=>{
+    const rev=byProj[d.project];
+    if(rev){
+      if(rev.status==='finance_review'){ pendingFinance.push({...d,status:rev.status}); return; }
+      // dismissed: only resurface if the detected value materially changed since dismissal
+      if(rev.status==='dismissed'){
+        const prev=rev.detected_gm_spiff;
+        if(prev!=null && Math.abs(d.detected-prev)<=SPIFF_TOL) return;
+      }
+      // approved with same detected value -> nothing to do
+      if(rev.status==='approved'){
+        const prev=rev.applied_gm_spiff;
+        if(prev!=null && Math.abs(d.detected-prev)<=SPIFF_TOL) return;
+      }
+    }
+    actionable.push(d);
+  });
+
+  if(!disc.length){ wrap.innerHTML='<div style="font-size:11px;color:#888;">No statement spiff discrepancies detected. (Load a statement and Refresh to compare.)</div>'; return; }
+
+  const pct=v=>(v==null?'—':(v*100).toFixed(1)+'%');
+  const kindLabel={add:'New spiff',modify:'Changed %',remove:'Statement shows full GM'};
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  let html='';
+  if(actionable.length){
+    html+='<div class="section-title" style="margin:4px 0 8px;">Detected from statement — review ('+actionable.length+')</div>';
+    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:14px;"><table class="spiff-table"><thead><tr>'
+        +'<th style="width:42%;">Project</th><th>Type</th><th>App GM spiff</th><th>Statement implies</th><th style="width:230px;">Action</th></tr></thead><tbody>';
+    actionable.forEach(d=>{
+      const applied=d.kind==='remove'?1:d.detected;
+      html+='<tr><td class="left">'+esc(d.project)+'</td>'
+        +'<td>'+kindLabel[d.kind]+'</td>'
+        +'<td>'+pct(d.appGm)+'</td>'
+        +'<td>'+(d.kind==='remove'?'100% (no spiff)':pct(d.detected))+'</td>'
+        +'<td>'
+          +'<button class="config-save" style="padding:3px 8px;" onclick="approveSpiffReview(\''+encodeURIComponent(d.project)+'\','+applied+',\''+d.kind+'\','+d.detected+')">Approve</button> '
+          +'<button class="config-save" style="padding:3px 8px;background:#8a6d00;" onclick="flagSpiffFinance(\''+encodeURIComponent(d.project)+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Flag Finance</button> '
+          +'<button class="config-save" style="padding:3px 8px;background:#777;" onclick="dismissSpiffReview(\''+encodeURIComponent(d.project)+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Dismiss</button>'
+        +'</td></tr>';
+    });
+    html+='</tbody></table></div>';
+  }
+  if(pendingFinance.length){
+    html+='<div class="section-title" style="margin:4px 0 8px;color:#8a6d00;">Flagged for Finance review ('+pendingFinance.length+')</div>';
+    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:6px;"><table class="spiff-table"><thead><tr>'
+        +'<th style="width:52%;">Project</th><th>Statement implies</th><th style="width:170px;">Action</th></tr></thead><tbody>';
+    pendingFinance.forEach(d=>{
+      html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+pct(d.detected)+'</td>'
+        +'<td><button class="config-save" style="padding:3px 8px;" onclick="approveSpiffReview(\''+encodeURIComponent(d.project)+'\','+(d.kind==='remove'?1:d.detected)+',\''+d.kind+'\','+d.detected+')">Approve</button> '
+        +'<button class="config-save" style="padding:3px 8px;background:#777;" onclick="dismissSpiffReview(\''+encodeURIComponent(d.project)+'\','+d.detected+',\''+d.kind+'\',null)">Clear</button></td></tr>';
+    });
+    html+='</tbody></table></div>';
+  }
+  if(!html) html='<div style="font-size:11px;color:#888;">All detected discrepancies have been actioned.</div>';
+  wrap.innerHTML=html;
+}
+
+async function _upsertReview(project,patch){
+  if(!_sb||!_user)return false;
+  try{ await _sb.from('spiff_reviews').upsert(Object.assign({project},patch),{onConflict:'owner_id,project'}); return true; }
+  catch(e){ return false; }
+}
+
+async function approveSpiffReview(projEnc,applied,kind,detected){
+  const project=decodeURIComponent(projEnc);
+  // Write the spiff: add/modify set gm_spiff=detected; remove neutralizes to 1 (kept for audit).
+  const existing=getSpiff(project);
+  const commSpiff=existing?(parseFloat(existing.commSpiff)||1):1;
+  if(!_sb||!_user){ setStatus('err','Sign in before approving.'); return; }
+  try{
+    await _sb.from('commission_spiffs').upsert([{name:project,comm_spiff:commSpiff,gm_spiff:applied}],{onConflict:'owner_id,name'});
+  }catch(e){ setStatus('err','Approve failed: '+e.message); return; }
+  await _upsertReview(project,{detected_gm_spiff:detected,applied_gm_spiff:applied,kind,status:'approved'});
+  await loadSpiffsFromSb(); await loadSpiffReviews();
+  renderSpiffTable(); renderSpiffReview(); if(_lastCsv){processCSVs(_lastCsv);} renderDashboard();
+  setStatus('ok','Spiff for "'+project+'" set to '+(applied*100).toFixed(1)+'%.');
+}
+
+async function flagSpiffFinance(projEnc,detected,kind,appGm){
+  const project=decodeURIComponent(projEnc);
+  const ok=await _upsertReview(project,{detected_gm_spiff:detected,app_gm_spiff:(appGm===null?null:appGm),kind,status:'finance_review'});
+  await loadSpiffReviews(); renderSpiffReview();
+  setStatus(ok?'ok':'err',ok?'Flagged "'+project+'" for Finance review.':'Could not flag (sign in?).');
+}
+
+async function dismissSpiffReview(projEnc,detected,kind,appGm){
+  const project=decodeURIComponent(projEnc);
+  const ok=await _upsertReview(project,{detected_gm_spiff:detected,app_gm_spiff:(appGm===null?null:appGm),kind,status:'dismissed'});
+  await loadSpiffReviews(); renderSpiffReview();
+  setStatus(ok?'ok':'err',ok?'Dismissed "'+project+'".':'Could not dismiss (sign in?).');
+}
+
 function renderSpiffTable(){
   renderSpiffDealOptions();
   document.getElementById('spiff-tbody').innerHTML=state.spiffs.map((s,i)=>`<tr>
@@ -580,6 +730,7 @@ async function loadData(){
             if(project&&mi>=0)state.stmtRows.push({
               project,monthIdx:mi,month,
               netGmBusDev:parseFloat((row['Net GM Bus Dev']||'0').replace(/[$,]/g,''))||0,
+              fullGm:parseFloat(((row['Net Gross Margin']||row['Project Gross Labor Margin']||'0')+'').replace(/[$,]/g,''))||0,
               busCommStmt:(parseFloat((row['Bus Dev Cmsn']||'0').replace(/[$,]/g,''))||0)+(parseFloat((row['BU Cmsn']||'0').replace(/[$,]/g,''))||0),
               busPct:parseFloat((row['%']||'0').replace(/[%,]/g,''))||0,
               projectType:row['Project Type']||'',
@@ -590,8 +741,11 @@ async function loadData(){
       }
     }
 
+    _lastCsv=csv;
     processCSVs(csv);
+    await loadSpiffReviews();
     renderSpiffTable();
+    renderSpiffReview();
     renderDashboard();
     await writeSnapshot();
     await computeAndWriteDeltas(_priorGmRows);
