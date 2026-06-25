@@ -539,80 +539,99 @@ function renderSpiffReview(){
     if(d.kind==='anomaly'){ anomalies.push(d); return; }
     const rev=byProj[d.project];
     if(rev){
-      if(rev.status==='finance_review'){ pendingFinance.push({...d,status:rev.status}); return; }
-      // dismissed: only resurface if the detected value materially changed since dismissal
+      if(rev.status==='finance_review'){ pendingFinance.push({...d,status:rev.status,note:rev.note}); return; }
       if(rev.status==='dismissed'){
         const prev=rev.detected_gm_spiff;
         if(prev!=null && Math.abs(d.detected-prev)<=SPIFF_TOL) return;
       }
-      // 'approved' is NOT suppressed here: detectSpiffDiscrepancies already compared the
-      // detected ratio to the LIVE spiff value, so if it still shows a discrepancy the spiff
-      // drifted (or was changed) and should resurface. 'deleted' rows don't suppress either.
+      // 'approved'/'deleted' do not suppress: detection already compared to the LIVE spiff.
     }
-    actionable.push(d);
+    actionable.push({...d,note:rev?rev.note:''});
   });
 
-  if(!disc.length){ wrap.innerHTML='<div style="font-size:11px;color:#888;">No statement spiff discrepancies detected. (Load a statement and Refresh to compare.)</div>'; return; }
-
-  const pct=v=>(v==null?'—':(v*100).toFixed(1)+'%');
+  const pct=v=>(v==null?'\u2014':(v*100).toFixed(1)+'%');
   const kindLabel={add:'New spiff',modify:'Changed %',remove:'Statement shows full GM'};
   const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const noteCell=(project,note,status)=>'<input type="text" value="'+esc(note||'')+'" placeholder="Note\u2026" style="width:100%;font-size:11px;" onchange="setReviewNote(\''+encodeURIComponent(project)+'\',this.value'+(status?",'"+status+"'":'')+')" />';
 
   let html='';
+
+  // ===== ACTIVE =====
+  const activeCount=actionable.length+pendingFinance.length+anomalies.length;
+  html+='<div class="section-title" style="margin:2px 0 4px;font-size:13px;">Active \u2014 needs attention ('+activeCount+')</div>';
+  if(!activeCount){
+    html+='<div style="font-size:11px;color:#888;margin-bottom:10px;">Nothing to review. Load a statement and Refresh to compare.</div>';
+  }
+
   if(actionable.length){
-    html+='<div class="section-title" style="margin:4px 0 8px;">Detected from statement — review ('+actionable.length+')</div>';
-    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:14px;"><table class="spiff-table"><thead><tr>'
-        +'<th style="width:42%;">Project</th><th>Type</th><th>App GM spiff</th><th>Statement implies</th><th style="width:230px;">Action</th></tr></thead><tbody>';
+    html+='<div class="section-title" style="margin:8px 0 6px;">Proposals ('+actionable.length+')</div>';
+    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:12px;"><table class="spiff-table"><thead><tr>'
+        +'<th style="width:30%;">Project</th><th>Type</th><th>App</th><th>Implies</th><th style="width:24%;">Note</th><th style="width:210px;">Action</th></tr></thead><tbody>';
     actionable.forEach(d=>{
-      const applied=d.kind==='remove'?1:d.detected;
+      const applied=d.kind==='remove'?1:d.detected, pe=encodeURIComponent(d.project);
       html+='<tr><td class="left">'+esc(d.project)+'</td>'
         +'<td>'+kindLabel[d.kind]+'</td>'
         +'<td>'+pct(d.appGm)+'</td>'
-        +'<td>'+(d.kind==='remove'?'100% (no spiff)':pct(d.detected))+'</td>'
+        +'<td>'+(d.kind==='remove'?'100%':pct(d.detected))+'</td>'
+        +'<td>'+noteCell(d.project,d.note)+'</td>'
         +'<td>'
-          +'<button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+encodeURIComponent(d.project)+'\','+applied+',\''+d.kind+'\','+d.detected+')">Approve</button> '
-          +'<button class="config-save" style="padding:3px 8px;background:#8a6d00;color:#fff;border-color:#8a6d00;" onclick="flagSpiffFinance(\''+encodeURIComponent(d.project)+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Flag Finance</button> '
-          +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+encodeURIComponent(d.project)+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Dismiss</button>'
+          +'<button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+pe+'\','+applied+',\''+d.kind+'\','+d.detected+')">Approve</button> '
+          +'<button class="config-save" style="padding:3px 8px;background:#8a6d00;color:#fff;border-color:#8a6d00;" onclick="flagSpiffFinance(\''+pe+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Flag Finance</button> '
+          +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+pe+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Dismiss</button>'
         +'</td></tr>';
     });
     html+='</tbody></table></div>';
   }
+
   if(pendingFinance.length){
-    html+='<div class="section-title" style="margin:4px 0 8px;color:#8a6d00;">Flagged for Finance review ('+pendingFinance.length+')</div>';
-    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:6px;"><table class="spiff-table"><thead><tr>'
-        +'<th style="width:52%;">Project</th><th>Statement implies</th><th style="width:170px;">Action</th></tr></thead><tbody>';
+    html+='<div class="section-title" style="margin:8px 0 6px;color:#8a6d00;">Flagged for Finance ('+pendingFinance.length+')</div>';
+    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:12px;"><table class="spiff-table"><thead><tr>'
+        +'<th style="width:36%;">Project</th><th>Implies</th><th style="width:30%;">Note</th><th style="width:170px;">Action</th></tr></thead><tbody>';
     pendingFinance.forEach(d=>{
+      const pe=encodeURIComponent(d.project);
       html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+pct(d.detected)+'</td>'
-        +'<td><button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+encodeURIComponent(d.project)+'\','+(d.kind==='remove'?1:d.detected)+',\''+d.kind+'\','+d.detected+')">Approve</button> '
-        +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+encodeURIComponent(d.project)+'\','+d.detected+',\''+d.kind+'\',null)">Clear</button></td></tr>';
+        +'<td>'+noteCell(d.project,d.note,'finance_review')+'</td>'
+        +'<td><button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+pe+'\','+(d.kind==='remove'?1:d.detected)+',\''+d.kind+'\','+d.detected+')">Approve</button> '
+        +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+pe+'\','+d.detected+',\''+d.kind+'\',null)">Clear</button></td></tr>';
     });
     html+='</tbody></table></div>';
   }
+
   if(anomalies.length){
-    html+='<div class="section-title" style="margin:4px 0 8px;color:#A32D2D;">Data check — BD GM exceeds full GM ('+anomalies.length+')</div>';
-    html+='<div style="font-size:11px;color:#777;margin-bottom:6px;">These show Net GM Bus Dev greater than full GM on the statement, usually a blank/understated full-GM cell. Not approvable as a spiff; verify the statement.</div>';
-    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:6px;"><table class="spiff-table"><thead><tr><th style="width:60%;">Project</th><th>Implied ratio</th></tr></thead><tbody>';
-    anomalies.forEach(d=>{ html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+(d.detected*100).toFixed(0)+'%</td></tr>'; });
+    html+='<div class="section-title" style="margin:8px 0 4px;color:#A32D2D;">Data check \u2014 BD GM exceeds full GM ('+anomalies.length+')</div>';
+    html+='<div style="font-size:11px;color:#777;margin-bottom:6px;">Net GM Bus Dev is greater than full GM on the statement, usually a blank/understated full-GM cell. Not approvable as a spiff; verify the statement.</div>';
+    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:6px;"><table class="spiff-table"><thead><tr><th style="width:44%;">Project</th><th>Implied</th><th style="width:38%;">Note</th></tr></thead><tbody>';
+    anomalies.forEach(d=>{
+      const rev=byProj[d.project];
+      html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+(d.detected*100).toFixed(0)+'%</td>'
+        +'<td>'+noteCell(d.project,rev?rev.note:'','data_check')+'</td></tr>';
+    });
     html+='</tbody></table></div>';
   }
-  // Archived / past decisions pile (dismissed, finance-flagged, deleted) with restore + notes.
-  const archived=_spiffReviews.filter(r=>['dismissed','finance_review','deleted'].includes(r.status));
-  if(archived.length){
-    const lbl={dismissed:'Dismissed',finance_review:'Finance review',deleted:'Deleted'};
-    html+='<div class="section-title" style="margin:14px 0 6px;color:#777;cursor:pointer;" onclick="(function(e){var b=document.getElementById(\'spiff-archive-body\');b.style.display=b.style.display===\'none\'?\'\':\'none\';})()">▾ Archived / past decisions ('+archived.length+')</div>';
-    html+='<div id="spiff-archive-body" style="display:none;"><div class="tbl-wrap" style="max-height:none;"><table class="spiff-table"><thead><tr>'
-        +'<th style="width:40%;">Project</th><th>Status</th><th>Detected</th><th style="width:30%;">Note</th><th style="width:120px;">Action</th></tr></thead><tbody>';
-    archived.forEach(r=>{
+
+  // ===== DECISION LOG (approved / dismissed / deleted) =====
+  const logged=_spiffReviews.filter(r=>['approved','dismissed','deleted'].includes(r.status));
+  html+='<div style="border-top:1px solid #e3e3e3;margin:16px 0 0;"></div>';
+  if(logged.length){
+    const lbl={approved:'Approved',dismissed:'Dismissed',deleted:'Deleted'};
+    html+='<div class="section-title" style="margin:12px 0 6px;color:#777;cursor:pointer;" onclick="(function(){var b=document.getElementById(\'spiff-log-body\');b.style.display=b.style.display===\'none\'?\'\':\'none\';})()">\u25be Decision log ('+logged.length+')</div>';
+    html+='<div id="spiff-log-body" style="display:none;"><div class="tbl-wrap" style="max-height:none;"><table class="spiff-table"><thead><tr>'
+        +'<th style="width:34%;">Project</th><th>Status</th><th>Value</th><th style="width:30%;">Note</th><th style="width:120px;">Action</th></tr></thead><tbody>';
+    logged.forEach(r=>{
       const pe=encodeURIComponent(r.project);
+      const val=r.status==='approved'?(r.applied_gm_spiff!=null?(r.applied_gm_spiff*100).toFixed(1)+'%':'\u2014')
+                                     :(r.detected_gm_spiff!=null?(r.detected_gm_spiff*100).toFixed(1)+'%':'\u2014');
       html+='<tr><td class="left">'+esc(r.project)+'</td>'
         +'<td>'+(lbl[r.status]||r.status)+'</td>'
-        +'<td>'+(r.detected_gm_spiff!=null?(r.detected_gm_spiff*100).toFixed(1)+'%':'—')+'</td>'
-        +'<td><input type="text" value="'+esc(r.note||'')+'" placeholder="Note…" style="width:100%;font-size:11px;" onchange="setReviewNote(\''+pe+'\',this.value)" /></td>'
-        +'<td><button class="config-save" style="padding:3px 8px;" onclick="restoreSpiffReview(\''+pe+'\')">Restore</button></td></tr>';
+        +'<td>'+val+'</td>'
+        +'<td>'+noteCell(r.project,r.note)+'</td>'
+        +'<td><button class="config-save" style="padding:3px 8px;" onclick="restoreSpiffReview(\''+pe+'\')">'+(r.status==='approved'?'Reopen':'Restore')+'</button></td></tr>';
     });
     html+='</tbody></table></div></div>';
+  } else {
+    html+='<div style="font-size:11px;color:#999;margin-top:12px;">Decision log is empty.</div>';
   }
-  if(!html) html='<div style="font-size:11px;color:#888;">All detected discrepancies have been actioned.</div>';
+
   wrap.innerHTML=html;
 }
 
@@ -644,9 +663,11 @@ async function flagSpiffFinance(projEnc,detected,kind,appGm){
   setStatus(ok?'ok':'err',ok?'Flagged "'+project+'" for Finance review.':'Could not flag (sign in?).');
 }
 
-async function setReviewNote(projEnc,note){
+async function setReviewNote(projEnc,note,status){
   const project=decodeURIComponent(projEnc);
-  await _upsertReview(project,{note:note});
+  const patch={note:note};
+  if(status)patch.status=status;   // e.g. data_check rows need a home to hold the note
+  await _upsertReview(project,patch);
   await loadSpiffReviews();
 }
 async function restoreSpiffReview(projEnc){
