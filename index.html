@@ -215,7 +215,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     <div id="spiff-review" style="margin-bottom:18px;"></div>
     <div class="tbl-wrap" style="max-height:none;margin-bottom:10px;">
       <table class="spiff-table">
-        <thead><tr><th style="width:58%;">Project name (must match ERP exactly)</th><th style="width:14%;text-align:center;">Comm spiff</th><th style="width:14%;text-align:center;">GM spiff</th><th style="width:14%;"></th></tr></thead>
+        <thead><tr><th style="width:40%;">Project name (must match ERP exactly)</th><th style="width:12%;text-align:center;">Comm spiff</th><th style="width:12%;text-align:center;">GM spiff</th><th style="width:28%;">Note</th><th style="width:8%;"></th></tr></thead>
         <tbody id="spiff-tbody"></tbody>
       </table>
     </div>
@@ -721,9 +721,8 @@ function renderSpiffTable(){
     <td><input type="text" list="spiff-deal-options" value="${s.name||''}" onchange="state.spiffs[${i}].name=this.value" placeholder="Type to search deals…" style="width:100%;" /></td>
     <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.commSpiff||1}" onchange="state.spiffs[${i}].commSpiff=parseFloat(this.value)||1" style="width:55px;text-align:right;" /></td>
     <td style="text-align:center;"><input type="number" step="0.05" min="0" max="1" value="${s.gmSpiff||0.5}" onchange="state.spiffs[${i}].gmSpiff=parseFloat(this.value)||0.5" style="width:55px;text-align:right;" /></td>
-    <td style="text-align:center;white-space:nowrap;"><button class="spiff-del" title="Note" style="margin-right:4px;" onclick="toggleSpiffNote(${i})">✎</button><button class="spiff-del" onclick="deleteSpiffRow(${i})">×</button></td>
-  </tr>
-  <tr id="spiff-note-${i}" style="display:${s._noteOpen?'':'none'};"><td colspan="4" style="padding:4px 6px 10px;"><input type="text" value="${(s.note||'').replace(/"/g,'&quot;')}" placeholder="Note for this spiff…" onchange="state.spiffs[${i}].note=this.value" style="width:100%;font-size:11px;" /></td>
+    <td><input type="text" value="${(s.note||'').replace(/"/g,'&quot;')}" placeholder="Note…" onchange="state.spiffs[${i}].note=this.value" style="width:100%;font-size:11px;" /></td>
+    <td style="text-align:center;"><button class="spiff-del" onclick="deleteSpiffRow(${i})">×</button></td>
   </tr>`).join('');
 }
 function addSpiffRow(){state.spiffs.push({name:'',commSpiff:1,gmSpiff:0.5});renderSpiffTable();showTab('spiffs');}
