@@ -458,7 +458,7 @@ function showTab(name){
   ['overview','monthly','recon','spiffs','config'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===name?'':'none';});
   document.querySelectorAll('.tab').forEach((el,i)=>{el.classList.toggle('active',['overview','monthly','recon','spiffs','config'][i]===name);});
   if(name==='recon')renderRecon();
-  if(name==='spiffs'){renderSpiffTable();renderSpiffReview();}
+  if(name==='spiffs'){renderSpiffTable();renderSpiffReview();loadSpiffReviews().then(renderSpiffReview);}
 }
 function switchYear(y){
   state.year=y;
