@@ -139,7 +139,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 <div id="tab-overview">
   <div class="metrics-grid">
     <div class="metric-card"><div class="metric-label">Projected comm</div><div class="metric-value" id="m-proj">—</div><div class="metric-sub">Full year est.</div></div>
-    <div class="metric-card"><div class="metric-label">Stmt comm (YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub">Per accounting</div></div>
+    <div class="metric-card"><div class="metric-label">Stmt comm (paid YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub" id="m-stmt-sub">Paid per statement</div></div>
     <div class="metric-card"><div class="metric-label">Invoiced comm</div><div class="metric-value" id="m-inv">—</div><div class="metric-sub">Billed to date</div></div>
     <div class="metric-card"><div class="metric-label">Cash received</div><div class="metric-value" id="m-paid">—</div><div class="metric-sub">Customer paid</div></div>
   </div>
@@ -496,6 +496,19 @@ function monthIdx(s){
   return['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(str);
 }
 
+// Month index (0-11) from a payment DATE string. Handles YYYY-MM-DD, M/D/YYYY,
+// and anything Date can parse; returns -1 if unparseable.
+function paidMonthIdx(s){
+  if(!s)return -1;
+  const t=String(s).trim();
+  let m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m)return parseInt(m[2],10)-1;
+  m=t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if(m)return parseInt(m[1],10)-1;
+  const d=new Date(t);
+  return isNaN(d)?-1:d.getMonth();
+}
+
 async function loadData(){
   const btn=document.getElementById('refresh-btn'),icon=document.getElementById('refresh-icon');
   btn.classList.add('loading');icon.className='spin';icon.textContent='↻';
@@ -679,6 +692,7 @@ function renderDashboard(){
 
   document.getElementById('m-proj').textContent=fmt(totProj);
   document.getElementById('m-stmt').textContent=fmt(totStmt);
+  {const e=document.getElementById('m-stmt-sub');if(e)e.textContent='Paid · earned '+fmt(totEarned);}
   document.getElementById('m-inv').textContent=fmt(totInv);
   document.getElementById('m-paid').textContent=fmt(totPaid);
   document.getElementById('wf-proj').textContent=fmt(totProj);
@@ -702,15 +716,20 @@ function renderDashboard(){
 }
 
 function renderMonthly(){
-  const mGm=Array(12).fill(0),mProj=Array(12).fill(0),mStmt=Array(12).fill(0);
+  const mGm=Array(12).fill(0),mProj=Array(12).fill(0),mStmt=Array(12).fill(0),mPaid=Array(12).fill(0);
   state.deals.forEach(d=>{if(d.months)Object.entries(d.months).forEach(([m,gm])=>{const mi=parseInt(m);mGm[mi]+=gm;mProj[mi]+=calcComm(gm,d.type);});});
-  state.stmtRows.forEach(r=>{if(r.monthIdx>=0)mStmt[r.monthIdx]+=(r.busCommStmt||0);});
+  state.stmtRows.forEach(r=>{
+    if(r.monthIdx>=0)mStmt[r.monthIdx]+=(r.busCommStmt||0);
+    // Paid lens: bucket commission by the month it was paid, when a payment date exists.
+    if(r.paidDate&&r.paidDate.trim()){const pmi=paidMonthIdx(r.paidDate);if(pmi>=0)mPaid[pmi]+=(r.busCommStmt||0);}
+  });
   document.getElementById('monthly-wrap').innerHTML=`<table>
     <thead><tr><th class="left">Metric</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>
       <tr><td class="left">Proj GM</td>${mGm.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mGm.reduce((a,b)=>a+b,0))}</td></tr>
       <tr><td class="left">Proj comm</td>${mProj.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProj.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr><td class="left">Stmt comm</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Stmt comm (earned)</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Stmt comm (paid)</td>${mPaid.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mPaid.reduce((a,b)=>a+b,0))}</td></tr>
       <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
     </tbody></table>`;
 }
