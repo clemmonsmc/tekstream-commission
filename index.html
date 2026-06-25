@@ -569,7 +569,7 @@ function renderSpiffReview(){
   if(actionable.length){
     html+='<div class="section-title" style="margin:8px 0 6px;">Proposals ('+actionable.length+')</div>';
     html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:12px;"><table class="spiff-table"><thead><tr>'
-        +'<th style="width:30%;">Project</th><th>Type</th><th>App</th><th>Implies</th><th style="width:24%;">Note</th><th style="width:210px;">Action</th></tr></thead><tbody>';
+        +'<th style="width:30%;">Project</th><th>Type</th><th>Current %</th><th>Statement %</th><th style="width:24%;">Note</th><th style="width:210px;">Action</th></tr></thead><tbody>';
     actionable.forEach(d=>{
       const applied=d.kind==='remove'?1:d.detected, pe=encodeURIComponent(d.project);
       html+='<tr><td class="left">'+esc(d.project)+'</td>'
@@ -589,7 +589,7 @@ function renderSpiffReview(){
   if(pendingFinance.length){
     html+='<div class="section-title" style="margin:8px 0 6px;color:#8a6d00;">Flagged for Finance ('+pendingFinance.length+')</div>';
     html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:12px;"><table class="spiff-table"><thead><tr>'
-        +'<th style="width:36%;">Project</th><th>Implies</th><th style="width:30%;">Note</th><th style="width:170px;">Action</th></tr></thead><tbody>';
+        +'<th style="width:36%;">Project</th><th>Statement %</th><th style="width:30%;">Note</th><th style="width:170px;">Action</th></tr></thead><tbody>';
     pendingFinance.forEach(d=>{
       const pe=encodeURIComponent(d.project);
       html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+pct(d.detected)+'</td>'
@@ -603,7 +603,7 @@ function renderSpiffReview(){
   if(anomalies.length){
     html+='<div class="section-title" style="margin:8px 0 4px;color:#A32D2D;">Data check \u2014 BD GM exceeds full GM ('+anomalies.length+')</div>';
     html+='<div style="font-size:11px;color:#777;margin-bottom:6px;">Net GM Bus Dev is greater than full GM on the statement, usually a blank/understated full-GM cell. Not approvable as a spiff; verify the statement.</div>';
-    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:6px;"><table class="spiff-table"><thead><tr><th style="width:44%;">Project</th><th>Implied</th><th style="width:38%;">Note</th></tr></thead><tbody>';
+    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:6px;"><table class="spiff-table"><thead><tr><th style="width:44%;">Project</th><th>Statement %</th><th style="width:38%;">Note</th></tr></thead><tbody>';
     anomalies.forEach(d=>{
       const rev=byProj[d.project];
       html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+(d.detected*100).toFixed(0)+'%</td>'
