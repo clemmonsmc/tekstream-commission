@@ -507,15 +507,18 @@ function detectSpiffDiscrepancies(){
     if(!isFinite(ratio)||ratio<=0)return;
     const sp=getSpiff(project);                            // current app spiff (or undefined)
     const appGm=sp?(parseFloat(sp.gmSpiff)||0):null;
+    // A valid GM spiff is a REDUCTION (0<ratio<1). ratio>=~1 from the statement means
+    // either no spiff (=1) or a data anomaly (full GM blank/understated on some rows),
+    // which would corrupt the math if written as a gm_spiff. Never propose those as spiffs.
     let kind=null;
-    if(!sp){
-      // app has no spiff; flag only if the statement shows a real reduction
-      if(Math.abs(ratio-1)>SPIFF_TOL) kind='add';
+    if(ratio>1+SPIFF_TOL){
+      kind='anomaly';                                      // BD GM > full GM: data check only, not approvable
+    } else if(!sp){
+      if(ratio<1-SPIFF_TOL) kind='add';                    // real reduction, no app spiff yet
     } else {
       if(Math.abs(ratio-1)<=SPIFF_TOL){
-        // statement shows full GM this period but app has a spiff -> removal (flag only)
-        kind='remove';
-      } else if(Math.abs(ratio-appGm)>SPIFF_TOL){
+        kind='remove';                                     // app has spiff but statement shows full GM (flag only)
+      } else if(ratio<1-SPIFF_TOL && Math.abs(ratio-appGm)>SPIFF_TOL){
         kind='modify';
       }
     }
@@ -531,8 +534,9 @@ function renderSpiffReview(){
   const disc=detectSpiffDiscrepancies();
   const byProj={}; _spiffReviews.forEach(r=>{byProj[r.project]=r;});
 
-  const actionable=[], pendingFinance=[];
+  const actionable=[], pendingFinance=[], anomalies=[];
   disc.forEach(d=>{
+    if(d.kind==='anomaly'){ anomalies.push(d); return; }
     const rev=byProj[d.project];
     if(rev){
       if(rev.status==='finance_review'){ pendingFinance.push({...d,status:rev.status}); return; }
@@ -584,6 +588,13 @@ function renderSpiffReview(){
         +'<td><button class="config-save" style="padding:3px 8px;" onclick="approveSpiffReview(\''+encodeURIComponent(d.project)+'\','+(d.kind==='remove'?1:d.detected)+',\''+d.kind+'\','+d.detected+')">Approve</button> '
         +'<button class="config-save" style="padding:3px 8px;background:#777;" onclick="dismissSpiffReview(\''+encodeURIComponent(d.project)+'\','+d.detected+',\''+d.kind+'\',null)">Clear</button></td></tr>';
     });
+    html+='</tbody></table></div>';
+  }
+  if(anomalies.length){
+    html+='<div class="section-title" style="margin:4px 0 8px;color:#A32D2D;">Data check — BD GM exceeds full GM ('+anomalies.length+')</div>';
+    html+='<div style="font-size:11px;color:#777;margin-bottom:6px;">These show Net GM Bus Dev greater than full GM on the statement, usually a blank/understated full-GM cell. Not approvable as a spiff; verify the statement.</div>';
+    html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:6px;"><table class="spiff-table"><thead><tr><th style="width:60%;">Project</th><th>Implied ratio</th></tr></thead><tbody>';
+    anomalies.forEach(d=>{ html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+(d.detected*100).toFixed(0)+'%</td></tr>'; });
     html+='</tbody></table></div>';
   }
   if(!html) html='<div style="font-size:11px;color:#888;">All detected discrepancies have been actioned.</div>';
