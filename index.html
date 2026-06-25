@@ -752,7 +752,9 @@ function renderRecon(){
       const stmtComm=hasStmt?stmtLookup[sk].comm:0;
       const stmtNetGm=hasStmt?stmtLookup[sk].netGm:0;
       const projType=hasStmt?stmtLookup[sk].type:'';
-      const delta=hasStmt?stmtComm-myComm:null;
+      // No statement commission (missing row or blank value) => no delta to show.
+      const hasStmtComm=stmtComm!==0;
+      const delta=hasStmtComm?stmtComm-myComm:null;
       if(flagF==='delta'&&(delta===null||Math.abs(delta)<0.5))return;
       if(flagF==='spiff'&&!d.spiff)return;
       rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,projType,hasStmt});
