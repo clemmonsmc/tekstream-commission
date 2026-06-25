@@ -79,6 +79,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 .spiff-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 8px; }
 .spiff-table th { font-size: 10px; font-weight: 600; color: #888; text-align: left; padding: 5px 8px; border-bottom: 1px solid #e0e0d8; background: #fafaf8; }
 .spiff-table td { padding: 4px 8px; border-bottom: 1px solid #f0f0ec; vertical-align: middle; }
+    .spiff-table input { font-family: inherit; font-size: 11px; color: #1a1a1a; }
 .spiff-table td input { background: transparent; border: none; font-size: 11px; color: #111; width: 100%; }
 .spiff-table td input[type=number] { width: 60px; text-align: right; }
 .spiff-table td input:focus { outline: 1px solid #aaa; border-radius: 3px; background: #fafaf8; }
@@ -213,6 +214,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
       Save to Drive to persist across sessions.
     </div>
     <div id="spiff-review" style="margin-bottom:18px;"></div>
+    <div class="section-title" style="margin:4px 0 8px;font-size:13px;">Active Spiffs</div>
     <div class="tbl-wrap" style="max-height:none;margin-bottom:10px;">
       <table class="spiff-table">
         <thead><tr><th style="width:40%;">Project name (must match ERP exactly)</th><th style="width:12%;text-align:center;">Comm spiff</th><th style="width:12%;text-align:center;">GM spiff</th><th style="width:28%;">Note</th><th style="width:8%;"></th></tr></thead>
@@ -634,7 +636,8 @@ function renderSpiffReview(){
       dh+='</tbody></table></div></div>';
       dwrap.innerHTML=dh;
     } else {
-      dwrap.innerHTML='';
+      // Always show the header so the section is discoverable even when empty.
+      dwrap.innerHTML='<div class="section-title" style="margin:0;color:#999;">Dismissed &amp; removed (0)</div>';
     }
   }
 }
