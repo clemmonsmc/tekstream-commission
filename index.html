@@ -748,13 +748,14 @@ function renderRecon(){
       const projGm=(d.months||{})[mi]||0;
       const myComm=calcComm(projGm,d.type);
       const sk=d.name+'|'+mi;
-      const stmtComm=stmtLookup[sk]?stmtLookup[sk].comm:0;
-      const stmtNetGm=stmtLookup[sk]?stmtLookup[sk].netGm:0;
-      const projType=stmtLookup[sk]?stmtLookup[sk].type:'';
-      const delta=stmtComm-myComm;
-      if(flagF==='delta'&&Math.abs(delta)<0.5)return;
+      const hasStmt=!!stmtLookup[sk];
+      const stmtComm=hasStmt?stmtLookup[sk].comm:0;
+      const stmtNetGm=hasStmt?stmtLookup[sk].netGm:0;
+      const projType=hasStmt?stmtLookup[sk].type:'';
+      const delta=hasStmt?stmtComm-myComm:null;
+      if(flagF==='delta'&&(delta===null||Math.abs(delta)<0.5))return;
       if(flagF==='spiff'&&!d.spiff)return;
-      rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,projType});
+      rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,projType,hasStmt});
     });
   });
 
@@ -774,7 +775,7 @@ function renderRecon(){
       <td>${fmt(r.myComm)}</td>
       <td>${fmt(r.stmtNetGm)}</td>
       <td>${fmt(r.stmtComm)}</td>
-      <td>${fmtD(r.delta)}</td>
+      <td>${r.delta===null?'<span style="color:#ccc;">—</span>':fmtD(r.delta)}</td>
       <td class="left" style="color:#888;font-size:10px;">${r.projType||'—'}</td>
       <td style="text-align:center;">${r.spiff?'<span class="badge badge-spiff">spiff</span>':''}</td>
     </tr>`).join('')}</tbody>
