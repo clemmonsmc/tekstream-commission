@@ -594,8 +594,15 @@ function renderSpiffReview(){
   if(pendingFinance.length){
     html+='<div class="section-title" style="margin:8px 0 6px;color:#8a6d00;">Flagged for Finance ('+pendingFinance.length+')</div>';
     html+='<div style="font-size:11px;color:#777;margin-bottom:6px;">These are your raised exceptions. Set the % you assert is correct and a note for Finance, then export. Riding with the file\'s math until Finance responds.</div>';
+    const curVer=(_currentVersion||'').trim();
+    html+='<div style="font-size:11px;margin-bottom:8px;">'
+       +(curVer
+          ? 'Working against version: <b>'+esc(curVer)+'</b>. '
+          : '<span style="color:#A32D2D;">No version set.</span> Set it when you load a new preapproval file. ')
+       +'<button class="config-save" style="padding:2px 8px;margin-left:4px;" onclick="promptNewVersion()">New version\u2026</button>'
+       +'</div>';
     html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:8px;"><table class="spiff-table"><thead><tr>'
-        +'<th style="width:28%;">Project</th><th>File %</th><th>Asserted %</th><th>$ impact</th><th style="width:28%;">Note for Finance</th><th>Ver</th><th></th></tr></thead><tbody>';
+        +'<th style="width:30%;">Project</th><th>File %</th><th>Asserted %</th><th>$ impact</th><th style="width:30%;">Note for Finance</th><th></th></tr></thead><tbody>';
     pendingFinance.forEach(d=>{
       const pe=encodeURIComponent(d.project);
       const ex=excByProj[d.project]||{};
@@ -606,7 +613,6 @@ function renderSpiffReview(){
         +'<td><input type="number" step="any" value="'+av+'" placeholder="%" style="width:60px;font-size:11px;" onchange="setExceptionAsserted(\''+pe+'\',this.value)" /></td>'
         +'<td><input type="number" step="any" value="'+imp+'" placeholder="$" style="width:74px;font-size:11px;" onchange="setExceptionImpact(\''+pe+'\',this.value)" /></td>'
         +'<td><input type="text" value="'+esc(ex.note&&ex.note!=='Auto-raised from spiff flag'?ex.note:'')+'" placeholder="Why this is wrong\u2026" style="width:100%;font-size:11px;" onchange="setExceptionNoteByProject(\''+pe+'\',this.value)" /></td>'
-        +'<td><input type="text" value="'+esc(ex.version||'')+'" placeholder="v1" style="width:46px;font-size:11px;" onchange="setExceptionVersion(\''+pe+'\',this.value)" /></td>'
         +'<td><button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="unflagSpiff(\''+pe+'\')">Un-flag</button></td></tr>';
     });
     html+='</tbody></table>';
@@ -737,6 +743,30 @@ async function dismissSpiffReview(projEnc,detected,kind,appGm){
 
 // ===== Commission exceptions (preapproval review -> feedback to Finance) =====
 let _exceptions=[];
+let _currentVersion=localStorage.getItem('comm_current_version')||'';
+async function promptNewVersion(){
+  if(!_sb||!_user){ setStatus('err','Sign in to set a version.'); return; }
+  const v=(window.prompt('New preapproval version label (e.g. v2). This snapshots the current notes/decisions under that label.', _currentVersion||'v1')||'').trim();
+  if(!v) return;
+  try{
+    await loadExceptions();
+    const open=(_exceptions||[]).filter(x=>x.status==='raised');
+    // 1) snapshot the CURRENT state of all open exceptions under this version
+    if(open.length){
+      const rows=open.map(x=>({version:v, project:x.project, category:x.category,
+        file_value:x.file_value, asserted_value:x.asserted_value, amount_impact:x.amount_impact,
+        note:x.note, status:x.status, exception_id:x.id}));
+      await _sb.from('exception_snapshots').insert(rows);
+    }
+    // 2) stamp the live exceptions with this version (last-write-wins; snapshot preserves history)
+    if(open.length){
+      await _sb.from('commission_exceptions').update({version:v}).in('id',open.map(x=>x.id));
+    }
+    _currentVersion=v; localStorage.setItem('comm_current_version',v);
+    await loadExceptions(); renderSpiffReview();
+    setStatus('ok','Version set to '+v+'. Snapshotted '+open.length+' exception(s).');
+  }catch(e){ setStatus('err','Version snapshot failed: '+e.message); }
+}
 async function _updateExceptionByProject(project,patch){
   if(!_sb||!_user)return false;
   try{
@@ -802,7 +832,7 @@ function exportExceptionsForFinance(){
     lines.push([x.project,catLbl[x.category]||x.category,
       isPct?pctv(x.file_value):(x.file_value==null?'':x.file_value),
       isPct?pctv(x.asserted_value):(x.asserted_value==null?'':x.asserted_value),
-      x.version||'', x.note||''].map(q).join(','));
+      x.version||_currentVersion||'', x.note||''].map(q).join(','));
   });
   const csv=lines.join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
