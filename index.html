@@ -704,7 +704,26 @@ async function flagSpiffFinance(projEnc,detected,kind,appGm){
   const project=decodeURIComponent(projEnc);
   const ok=await _upsertReview(project,{detected_gm_spiff:detected,app_gm_spiff:(appGm===null?null:appGm),kind,status:'finance_review'});
   await loadSpiffReviews(); renderSpiffReview();
-  setStatus(ok?'ok':'err',ok?'Flagged "'+project+'" for Finance review.':'Could not flag (sign in?).');
+  // Single registry (option 2): a flagged spiff is also a raised exception. Mirror it into
+  // commission_exceptions so the list you send Finance is the one source of truth. Dedupe on
+  // an open gm_spiff exception for the same project so re-flagging doesn't pile up rows.
+  if(_sb&&_user){
+    try{
+      await loadExceptions();
+      const exists=(_exceptions||[]).some(x=>x.project===project && x.category==='gm_spiff' && x.status==='raised');
+      if(!exists){
+        const ver=((document.getElementById('exc-version')||{}).value||'').trim()||null;
+        await _sb.from('commission_exceptions').insert([{
+          project, month:null, category:'gm_spiff',
+          file_value:(appGm===null?null:appGm), asserted_value:detected,
+          amount_impact:null, note:'Auto-raised from spiff flag', version:ver, status:'raised'
+        }]);
+        await loadExceptions();
+        if(document.getElementById('tab-exceptions').style.display!=='none') renderExceptions();
+      }
+    }catch(e){}
+  }
+  setStatus(ok?'ok':'err',ok?'Flagged "'+project+'" for Finance (added to Exceptions).':'Could not flag (sign in?).');
 }
 
 async function setReviewNote(projEnc,note,status){
