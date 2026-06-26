@@ -740,8 +740,16 @@ async function _updateExceptionByProject(project,patch){
   try{
     await loadExceptions();
     const ex=(_exceptions||[]).find(x=>x.project===project&&x.category==='gm_spiff'&&x.status==='raised');
-    if(!ex)return false;
-    await _sb.from('commission_exceptions').update(patch).eq('id',ex.id);
+    if(ex){
+      await _sb.from('commission_exceptions').update(patch).eq('id',ex.id);
+    } else {
+      // Flagged but no exception row yet (e.g. flagged before routing existed) -> create it.
+      const rev=(_spiffReviews||[]).find(r=>r.project===project);
+      const base={project, category:'gm_spiff', status:'raised',
+                  file_value:(rev&&rev.app_gm_spiff!=null)?rev.app_gm_spiff:null,
+                  note:'Auto-raised from spiff flag'};
+      await _sb.from('commission_exceptions').insert([Object.assign(base,patch)]);
+    }
     await loadExceptions();
     return true;
   }catch(e){ return false; }
