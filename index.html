@@ -134,6 +134,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   <button class="tab" onclick="showTab('monthly')">Monthly</button>
   <button class="tab" onclick="showTab('recon')">Reconciliation</button>
   <button class="tab" onclick="showTab('spiffs')">Spiffs &amp; renewals</button>
+  <button class="tab" onclick="showTab('exceptions')">Exceptions</button>
   <button class="tab" onclick="showTab('config')">Config</button>
 </div>
 
@@ -228,6 +229,37 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     </div>
     <div id="spiff-dismissed" style="margin-top:20px;"></div>
     
+  </div>
+</div>
+
+<!-- EXCEPTIONS -->
+<div id="tab-exceptions" style="display:none">
+  <div class="config-panel">
+    <div class="spiff-section-head">Raise an exception</div>
+    <div style="font-size:11px;color:#777;margin-bottom:12px;line-height:1.6;">
+      Flag a line on the preapproval file that you believe is wrong, before Finance finalizes. Record what the file shows, what you assert is correct, the dollar impact, and the email version you raised it against. These are the items you send back to Finance.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 90px 130px;gap:8px;margin-bottom:8px;">
+      <input type="text" id="exc-project" list="exc-deal-options" placeholder="Project (type to search)" style="font-size:12px;" />
+      <input type="text" id="exc-month" placeholder="Month" style="font-size:12px;" />
+      <select id="exc-category" style="font-size:12px;">
+        <option value="gm_spiff">GM spiff %</option>
+        <option value="commission">Commission $</option>
+        <option value="gm">Gross margin</option>
+        <option value="attribution">Attribution</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 80px;gap:8px;margin-bottom:8px;">
+      <input type="number" step="any" id="exc-fileval" placeholder="File value" style="font-size:12px;" />
+      <input type="number" step="any" id="exc-asserted" placeholder="Asserted correct" style="font-size:12px;" />
+      <input type="number" step="any" id="exc-impact" placeholder="$ impact" style="font-size:12px;" />
+      <input type="text" id="exc-version" placeholder="v1" style="font-size:12px;" />
+    </div>
+    <input type="text" id="exc-note" placeholder="Note for Finance (why this is wrong)" style="width:100%;font-size:12px;margin-bottom:8px;" />
+    <button class="config-save" style="background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="raiseException()">Raise exception</button>
+    <span id="exc-status" style="font-size:11px;color:#888;margin-left:10px;"></span>
+    <div id="exc-list" style="margin-top:18px;"></div>
   </div>
 </div>
 
@@ -459,10 +491,11 @@ function gmMult(name){const s=getSpiff(name);return s?parseFloat(s.gmSpiff)||0.5
 
 function setStatus(type,msg){document.getElementById('status-dot').className='status-dot '+type;document.getElementById('status-text').textContent=msg;}
 function showTab(name){
-  ['overview','monthly','recon','spiffs','config'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===name?'':'none';});
-  document.querySelectorAll('.tab').forEach((el,i)=>{el.classList.toggle('active',['overview','monthly','recon','spiffs','config'][i]===name);});
+  ['overview','monthly','recon','spiffs','exceptions','config'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===name?'':'none';});
+  document.querySelectorAll('.tab').forEach((el,i)=>{el.classList.toggle('active',['overview','monthly','recon','spiffs','exceptions','config'][i]===name);});
   if(name==='recon')renderRecon();
   if(name==='spiffs'){renderSpiffTable();renderSpiffReview();loadSpiffReviews().then(renderSpiffReview);}
+  if(name==='exceptions'){renderExceptionDealOptions();renderExceptions();loadExceptions().then(renderExceptions);}
 }
 function switchYear(y){
   state.year=y;
@@ -704,6 +737,87 @@ async function dismissSpiffReview(projEnc,detected,kind,appGm){
   const ok=await _upsertReview(project,{detected_gm_spiff:detected,app_gm_spiff:(appGm===null?null:appGm),kind,status:'dismissed'});
   await loadSpiffReviews(); renderSpiffReview();
   setStatus(ok?'ok':'err',ok?'Dismissed "'+project+'".':'Could not dismiss (sign in?).');
+}
+
+// ===== Commission exceptions (preapproval review -> feedback to Finance) =====
+let _exceptions=[];
+async function loadExceptions(){
+  if(!_sb||!_user){_exceptions=[];return;}
+  try{ const {data}=await _sb.from('commission_exceptions').select('*').order('raised_at',{ascending:false}); _exceptions=data||[]; }
+  catch(e){ _exceptions=[]; }
+}
+function renderExceptionDealOptions(){
+  let dl=document.getElementById('exc-deal-options');
+  if(!dl){dl=document.createElement('datalist');dl.id='exc-deal-options';document.body.appendChild(dl);}
+  // prefer preapproval deals (the review surface); fall back to statement projects
+  const src=(state.preapprovalRows&&state.preapprovalRows.length)?state.preapprovalRows:(state.stmtRows||[]);
+  const names=[...new Set(src.map(r=>r.project).filter(Boolean))].sort();
+  dl.innerHTML=names.map(n=>'<option value="'+n.replace(/"/g,'&quot;')+'">').join('');
+}
+async function raiseException(){
+  const st=document.getElementById('exc-status');
+  const g=id=>document.getElementById(id);
+  const project=(g('exc-project').value||'').trim();
+  if(!project){ if(st)st.innerHTML='<span style="color:#A32D2D;">Project is required.</span>'; return; }
+  if(!_sb||!_user){ if(st)st.innerHTML='<span style="color:#A32D2D;">Sign in to raise exceptions.</span>'; return; }
+  const num=v=>{ v=(v||'').trim(); return v===''?null:(parseFloat(v.replace(/[$,%]/g,''))||0); };
+  const rec={
+    project,
+    month:(g('exc-month').value||'').trim()||null,
+    category:g('exc-category').value,
+    file_value:num(g('exc-fileval').value),
+    asserted_value:num(g('exc-asserted').value),
+    amount_impact:num(g('exc-impact').value),
+    version:(g('exc-version').value||'').trim()||null,
+    note:(g('exc-note').value||'').trim()||null,
+    status:'raised'
+  };
+  try{
+    const {error}=await _sb.from('commission_exceptions').insert(rec);
+    if(error)throw error;
+    ['exc-project','exc-month','exc-fileval','exc-asserted','exc-impact','exc-version','exc-note'].forEach(id=>g(id).value='');
+    if(st)st.textContent='Raised.';
+    await loadExceptions(); renderExceptions();
+  }catch(e){ if(st)st.innerHTML='<span style="color:#A32D2D;">Could not raise: '+e.message+'</span>'; }
+}
+async function setExceptionField(id,field,value){
+  if(!_sb||!_user)return;
+  const patch={}; patch[field]=value;
+  if(field==='status') patch.resolved_at = (value==='raised'?null:new Date().toISOString());
+  try{ await _sb.from('commission_exceptions').update(patch).eq('id',id); await loadExceptions(); renderExceptions(); }catch(e){}
+}
+async function deleteException(id){
+  if(!_sb||!_user)return;
+  try{ await _sb.from('commission_exceptions').delete().eq('id',id); await loadExceptions(); renderExceptions(); }catch(e){}
+}
+function renderExceptions(){
+  const wrap=document.getElementById('exc-list');
+  if(!wrap)return;
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  if(!_exceptions.length){ wrap.innerHTML='<div style="font-size:11px;color:#999;">No exceptions raised yet.</div>'; return; }
+  const catLbl={gm_spiff:'GM spiff %',commission:'Commission $',gm:'Gross margin',attribution:'Attribution',other:'Other'};
+  const stColor={raised:'#1f6feb',accepted:'#1a7f37',rejected:'#A32D2D',partial:'#8a6d00'};
+  const fmt=v=>(v==null?'\u2014':v);
+  let html='<div class="spiff-section-head">Raised exceptions ('+_exceptions.length+')</div>';
+  html+='<div class="tbl-wrap" style="max-height:none;"><table class="spiff-table"><thead><tr>'
+      +'<th style="width:26%;">Project</th><th>Mon</th><th>Category</th><th>File</th><th>Asserted</th><th>$ impact</th><th>Ver</th><th style="width:20%;">Note</th><th>Status</th><th></th></tr></thead><tbody>';
+  _exceptions.forEach(x=>{
+    const sc=stColor[x.status]||'#555';
+    html+='<tr><td class="left">'+esc(x.project)+'</td>'
+      +'<td>'+esc(x.month||'')+'</td>'
+      +'<td>'+(catLbl[x.category]||x.category)+'</td>'
+      +'<td>'+fmt(x.file_value)+'</td>'
+      +'<td>'+fmt(x.asserted_value)+'</td>'
+      +'<td>'+fmt(x.amount_impact)+'</td>'
+      +'<td>'+esc(x.version||'')+'</td>'
+      +'<td><input type="text" value="'+esc(x.note||'')+'" style="width:100%;font-size:11px;" onchange="setExceptionField(\''+x.id+'\',\'note\',this.value)" /></td>'
+      +'<td><select style="font-size:11px;color:'+sc+';font-weight:600;" onchange="setExceptionField(\''+x.id+'\',\'status\',this.value)">'
+        +['raised','accepted','rejected','partial'].map(s=>'<option value="'+s+'"'+(s===x.status?' selected':'')+'>'+s+'</option>').join('')
+        +'</select></td>'
+      +'<td><button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="deleteException(\''+x.id+'\')">Delete</button></td></tr>';
+  });
+  html+='</tbody></table></div>';
+  wrap.innerHTML=html;
 }
 
 async function toggleSpiffNote(i){
