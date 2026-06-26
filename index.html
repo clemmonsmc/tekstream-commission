@@ -244,6 +244,8 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     <div class="config-row"><label>Payments CSV</label><input type="text" id="cfg-pay" value="commission_calc__invoice_payments_monthly_report.csv" /></div>
     <div class="config-row"><label>GM pivot CSV</label><input type="text" id="cfg-gm" value="commission_calc__gross_margin_report_pivot.csv" /></div>
     <div class="config-row"><label>Commission statement</label><input type="text" id="cfg-stmt" value="commission_statement.xlsx" /></div>
+    <div class="config-row"><label>Preapproval file</label><input type="text" id="cfg-preapproval" value="commission_preapproval.xlsx" /></div>
+    <div class="config-row"><label>BD Director name</label><input type="text" id="cfg-bddir" value="Matthew Clemmons" /></div>
     <div class="config-row"><label>Spiff list (JSON)</label><input type="text" id="cfg-spiff" value="commission_spiffs.json" /></div>
     <button class="config-save" onclick="setStatus('ok','Settings updated — click Refresh to reload data.')">Save settings</button>
   </div>
@@ -373,7 +375,7 @@ async function hydrateSnapshot(year){
       setStatus('ok','Loaded saved data'+(_lastRefreshed?' from '+new Date(_lastRefreshed).toLocaleString():'')+'. Click Refresh to pull the latest from Drive.');
       return true;
     }
-    state.deals=[];state.stmtRows=[];state.invoiceRows=[];state.paymentRows=[];state.gmRows=[];
+    state.deals=[];state.stmtRows=[];state.preapprovalRows=[];state.invoiceRows=[];state.paymentRows=[];state.gmRows=[];
     renderDashboard();
     setStatus('ok','No saved data for '+year+'. Click Refresh to import from Drive.');
     return false;
@@ -497,7 +499,9 @@ async function loadSpiffReviews(){
 // Build the list of detected discrepancies from the current statement rows.
 function detectSpiffDiscrepancies(){
   const agg={}; // project -> {full, bd}
-  (state.stmtRows||[]).forEach(r=>{
+  // Prefer the preapproval file (review surface) when loaded; else the statement.
+  const src=(state.preapprovalRows&&state.preapprovalRows.length)?state.preapprovalRows:(state.stmtRows||[]);
+  src.forEach(r=>{
     if(!r.project)return;
     if(!agg[r.project])agg[r.project]={full:0,bd:0};
     agg[r.project].full+=(r.fullGm||0);
@@ -849,6 +853,41 @@ async function loadData(){
             });
           });
         }catch(e){missing.push('stmt_'+sheetName);}
+      }
+    }
+
+    // Load preapproval file (pre-finalization, same data; multi-person -> filter to BD Director).
+    // Drives spiff detection / exceptions. Tabs are <yr>Consolidated / <yr>Licenses (no spaces).
+    // The statement above still feeds payment-date views and final validation.
+    const preFname=(document.getElementById('cfg-preapproval')||{}).value;
+    const bdDir=((document.getElementById('cfg-bddir')||{}).value||'').trim();
+    const preFile=preFname?find(preFname.trim()):null;
+    state.preapprovalRows=[];
+    if(preFile){
+      const yr=state.year;
+      const preTabs=[{sheet:String(yr)+'Consolidated',dirCol:'Business Dev Director',gmCol:'Net Gross Margin'},
+                     {sheet:String(yr)+'Licenses',dirCol:'Project - Business Dev Director',gmCol:'Project Gross Labor Margin'}];
+      for(const t of preTabs){
+        try{
+          const sr=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'getSheetCSV',fileId:preFile.id,sheetName:t.sheet})});
+          const sd=await sr.json();
+          if(sd.error)throw new Error(sd.error);
+          parseCSV(sd.csv||'').forEach(row=>{
+            const project=row['Project']||'',month=row['Mon']||row['Month']||'';
+            const mi=monthIdx(month);
+            const dir=(row[t.dirCol]||'').trim();
+            if(bdDir && dir!==bdDir) return;                 // filter to this BD Director
+            if(project&&mi>=0)state.preapprovalRows.push({
+              project,monthIdx:mi,month,
+              netGmBusDev:parseFloat((row['Net GM Bus Dev']||'0').replace(/[$,]/g,''))||0,
+              fullGm:parseFloat(((row[t.gmCol]||'0')+'').replace(/[$,]/g,''))||0,
+              busCommStmt:(parseFloat((row['Bus Dev Cmsn']||'0').replace(/[$,]/g,''))||0)+(parseFloat((row['BU Cmsn']||'0').replace(/[$,]/g,''))||0),
+              busPct:parseFloat((row['%']||'0').replace(/[%,]/g,''))||0,
+              projectType:row['Project Type']||'',
+              paidDate:row['Payment date']||row['Pmt date']||''
+            });
+          });
+        }catch(e){missing.push('preapproval_'+t.sheet);}
       }
     }
 
