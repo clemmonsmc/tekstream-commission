@@ -216,7 +216,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
       Save to Drive to persist across sessions.
     </div>
     <div id="spiff-review" style="margin-bottom:18px;"></div>
-    <div class="spiff-section-head">Approved</div>
+    <div class="spiff-section-head">Accepted</div>
     <div class="tbl-wrap" style="max-height:none;margin-bottom:10px;">
       <table class="spiff-table">
         <thead><tr><th style="width:40%;">Project name (must match ERP exactly)</th><th style="width:12%;text-align:center;">Comm spiff</th><th style="width:12%;text-align:center;">GM spiff</th><th style="width:28%;">Note</th><th style="width:8%;"></th></tr></thead>
@@ -615,9 +615,9 @@ function renderSpiffReview(){
         +'<td>'+(d.kind==='remove'?'100%':pct(d.detected))+'</td>'
         +'<td>'+noteCell(d.project,d.note)+'</td>'
         +'<td>'
-          +'<button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+pe+'\','+applied+',\''+d.kind+'\','+d.detected+')">Approve</button> '
+          +'<button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+pe+'\','+applied+',\''+d.kind+'\','+d.detected+')">Accept</button> '
           +'<button class="config-save" style="padding:3px 8px;background:#8a6d00;color:#fff;border-color:#8a6d00;" onclick="flagSpiffFinance(\''+pe+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Flag Finance</button> '
-          +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+pe+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Dismiss</button>'
+          +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+pe+'\','+d.detected+',\''+d.kind+'\','+(d.appGm==null?'null':d.appGm)+')">Reject</button>'
         +'</td></tr>';
     });
     html+='</tbody></table></div>';
@@ -631,8 +631,8 @@ function renderSpiffReview(){
       const pe=encodeURIComponent(d.project);
       html+='<tr><td class="left">'+esc(d.project)+'</td><td>'+pct(d.detected)+'</td>'
         +'<td>'+noteCell(d.project,d.note,'finance_review')+'</td>'
-        +'<td><button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+pe+'\','+(d.kind==='remove'?1:d.detected)+',\''+d.kind+'\','+d.detected+')">Approve</button> '
-        +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+pe+'\','+d.detected+',\''+d.kind+'\',null)">Dismiss</button></td></tr>';
+        +'<td><button class="config-save" style="padding:3px 8px;background:#1f6feb;color:#fff;border-color:#1f6feb;" onclick="approveSpiffReview(\''+pe+'\','+(d.kind==='remove'?1:d.detected)+',\''+d.kind+'\','+d.detected+')">Accept</button> '
+        +'<button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="dismissSpiffReview(\''+pe+'\','+d.detected+',\''+d.kind+'\',null)">Reject</button></td></tr>';
     });
     html+='</tbody></table></div>';
   }
@@ -657,8 +657,8 @@ function renderSpiffReview(){
   if(dwrap){
     const setAside=_spiffReviews.filter(r=>['dismissed','deleted'].includes(r.status));
     if(setAside.length){
-      const lbl={dismissed:'Dismissed',deleted:'Removed'};
-      let dh='<div class="spiff-section-head" style="margin:16px 0 6px;cursor:pointer;" onclick="(function(){var b=document.getElementById(\'spiff-dismissed-body\');b.style.display=b.style.display===\'none\'?\'\':\'none\';})()">\u25b8 Dismissed &amp; removed ('+setAside.length+')</div>';
+      const lbl={dismissed:'Rejected',deleted:'Removed'};
+      let dh='<div class="spiff-section-head" style="margin:16px 0 6px;cursor:pointer;" onclick="(function(){var b=document.getElementById(\'spiff-dismissed-body\');b.style.display=b.style.display===\'none\'?\'\':\'none\';})()">\u25b8 Rejected &amp; removed ('+setAside.length+')</div>';
       dh+='<div id="spiff-dismissed-body" style="display:none;"><div class="tbl-wrap" style="max-height:none;"><table class="spiff-table"><thead><tr>'
         +'<th style="width:36%;">Project</th><th>Status</th><th>Value</th><th style="width:30%;">Note</th><th style="width:120px;">Action</th></tr></thead><tbody>';
       setAside.forEach(r=>{
@@ -674,7 +674,7 @@ function renderSpiffReview(){
       dwrap.innerHTML=dh;
     } else {
       // Always show the header so the section is discoverable even when empty.
-      dwrap.innerHTML='<div class="spiff-section-head" style="margin:16px 0 0;color:#999;">Dismissed &amp; removed (0)</div>';
+      dwrap.innerHTML='<div class="spiff-section-head" style="margin:16px 0 0;color:#999;">Rejected &amp; removed (0)</div>';
     }
   }
 }
@@ -693,7 +693,7 @@ async function approveSpiffReview(projEnc,applied,kind,detected){
   if(!_sb||!_user){ setStatus('err','Sign in before approving.'); return; }
   try{
     await _sb.from('commission_spiffs').upsert([{name:project,comm_spiff:commSpiff,gm_spiff:applied}],{onConflict:'owner_id,name'});
-  }catch(e){ setStatus('err','Approve failed: '+e.message); return; }
+  }catch(e){ setStatus('err','Accept failed: '+e.message); return; }
   await _upsertReview(project,{detected_gm_spiff:detected,applied_gm_spiff:applied,kind,status:'approved'});
   await loadSpiffsFromSb(); await loadSpiffReviews();
   renderSpiffTable(); renderSpiffReview(); if(_lastCsv){processCSVs(_lastCsv);} renderDashboard();
@@ -755,7 +755,7 @@ async function dismissSpiffReview(projEnc,detected,kind,appGm){
   const project=decodeURIComponent(projEnc);
   const ok=await _upsertReview(project,{detected_gm_spiff:detected,app_gm_spiff:(appGm===null?null:appGm),kind,status:'dismissed'});
   await loadSpiffReviews(); renderSpiffReview();
-  setStatus(ok?'ok':'err',ok?'Dismissed "'+project+'".':'Could not dismiss (sign in?).');
+  setStatus(ok?'ok':'err',ok?'Rejected "'+project+'".':'Could not dismiss (sign in?).');
 }
 
 // ===== Commission exceptions (preapproval review -> feedback to Finance) =====
