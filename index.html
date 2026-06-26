@@ -595,14 +595,16 @@ function renderSpiffReview(){
     html+='<div class="section-title" style="margin:8px 0 6px;color:#8a6d00;">Flagged for Finance ('+pendingFinance.length+')</div>';
     html+='<div style="font-size:11px;color:#777;margin-bottom:6px;">These are your raised exceptions. Set the % you assert is correct and a note for Finance, then export. Riding with the file\'s math until Finance responds.</div>';
     html+='<div class="tbl-wrap" style="max-height:none;margin-bottom:8px;"><table class="spiff-table"><thead><tr>'
-        +'<th style="width:30%;">Project</th><th>File %</th><th>Asserted %</th><th style="width:30%;">Note for Finance</th><th>Ver</th><th></th></tr></thead><tbody>';
+        +'<th style="width:28%;">Project</th><th>File %</th><th>Asserted %</th><th>$ impact</th><th style="width:28%;">Note for Finance</th><th>Ver</th><th></th></tr></thead><tbody>';
     pendingFinance.forEach(d=>{
       const pe=encodeURIComponent(d.project);
       const ex=excByProj[d.project]||{};
       const av=(ex.asserted_value!=null)?(ex.asserted_value*100).toFixed(1):'';
+      const imp=(ex.amount_impact!=null)?ex.amount_impact:'';
       html+='<tr><td class="left">'+esc(d.project)+'</td>'
         +'<td>'+pct(d.detected)+'</td>'
-        +'<td><input type="number" step="any" value="'+av+'" placeholder="%" style="width:64px;font-size:11px;" onchange="setExceptionAsserted(\''+pe+'\',this.value)" /></td>'
+        +'<td><input type="number" step="any" value="'+av+'" placeholder="%" style="width:60px;font-size:11px;" onchange="setExceptionAsserted(\''+pe+'\',this.value)" /></td>'
+        +'<td><input type="number" step="any" value="'+imp+'" placeholder="$" style="width:74px;font-size:11px;" onchange="setExceptionImpact(\''+pe+'\',this.value)" /></td>'
         +'<td><input type="text" value="'+esc(ex.note&&ex.note!=='Auto-raised from spiff flag'?ex.note:'')+'" placeholder="Why this is wrong\u2026" style="width:100%;font-size:11px;" onchange="setExceptionNoteByProject(\''+pe+'\',this.value)" /></td>'
         +'<td><input type="text" value="'+esc(ex.version||'')+'" placeholder="v1" style="width:46px;font-size:11px;" onchange="setExceptionVersion(\''+pe+'\',this.value)" /></td>'
         +'<td><button class="config-save" style="padding:3px 8px;background:#555;color:#fff;border-color:#555;" onclick="unflagSpiff(\''+pe+'\')">Un-flag</button></td></tr>';
@@ -690,7 +692,7 @@ async function flagSpiffFinance(projEnc,detected,kind,appGm){
         const ver=((document.getElementById('exc-version')||{}).value||'').trim()||null;
         await _sb.from('commission_exceptions').insert([{
           project, month:null, category:'gm_spiff',
-          file_value:(appGm===null?null:appGm), asserted_value:detected,
+          file_value:detected, asserted_value:detected,
           amount_impact:null, note:'Auto-raised from spiff flag', version:ver, status:'raised'
         }]);
         await loadExceptions();
@@ -745,9 +747,9 @@ async function _updateExceptionByProject(project,patch){
     } else {
       // Flagged but no exception row yet (e.g. flagged before routing existed) -> create it.
       const rev=(_spiffReviews||[]).find(r=>r.project===project);
+      const fileVal=(rev&&rev.detected_gm_spiff!=null)?rev.detected_gm_spiff:null;
       const base={project, category:'gm_spiff', status:'raised',
-                  file_value:(rev&&rev.app_gm_spiff!=null)?rev.app_gm_spiff:null,
-                  note:'Auto-raised from spiff flag'};
+                  file_value:fileVal, note:'Auto-raised from spiff flag'};
       await _sb.from('commission_exceptions').insert([Object.assign(base,patch)]);
     }
     await loadExceptions();
@@ -763,6 +765,11 @@ async function setExceptionAsserted(projEnc,val){
 async function setExceptionNoteByProject(projEnc,note){
   const project=decodeURIComponent(projEnc);
   await _updateExceptionByProject(project,{note:note});
+}
+async function setExceptionImpact(projEnc,val){
+  const project=decodeURIComponent(projEnc);
+  const v=(val||'').trim(); const num=v===''?null:(parseFloat(v.replace(/[$,]/g,''))||0);
+  await _updateExceptionByProject(project,{amount_impact:num});
 }
 async function setExceptionVersion(projEnc,ver){
   const project=decodeURIComponent(projEnc);
@@ -788,14 +795,14 @@ function exportExceptionsForFinance(){
   const catLbl={gm_spiff:'GM spiff %',commission:'Commission $',gm:'Gross margin',attribution:'Attribution',other:'Other'};
   const q=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
   const pctv=v=>(v==null?'':(v*100).toFixed(1)+'%');
-  const head=['Project','Month','Category','File value','Asserted correct','$ impact','Version','Note'];
+  const head=['Project','Category','File value','Asserted correct','Version','Note'];
   const lines=[head.map(q).join(',')];
   open.forEach(x=>{
     const isPct=x.category==='gm_spiff';
-    lines.push([x.project,x.month||'',catLbl[x.category]||x.category,
+    lines.push([x.project,catLbl[x.category]||x.category,
       isPct?pctv(x.file_value):(x.file_value==null?'':x.file_value),
       isPct?pctv(x.asserted_value):(x.asserted_value==null?'':x.asserted_value),
-      (x.amount_impact==null?'':x.amount_impact), x.version||'', x.note||''].map(q).join(','));
+      x.version||'', x.note||''].map(q).join(','));
   });
   const csv=lines.join('\n');
   const blob=new Blob([csv],{type:'text/csv'});
