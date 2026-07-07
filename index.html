@@ -1263,7 +1263,7 @@ function processCSVs(csv){
   });
 
   state.invoiceRows=parseCSV(csv.inv).map(r=>({proj:r['Project']||r['Invoice - Project']||'',date:r['Date']||'',total:parseFloat(r['Total']||0)||0}));
-  state.paymentRows=parseCSV(csv.pay).map(r=>({proj:r['Invoice - Project']||r['Project']||'',paidDate:r['Date']||'',total:parseFloat(r['Total']||0)||0}));
+  state.paymentRows=parseCSV(csv.pay).map(r=>({proj:r['Invoice - Project']||r['Project']||'',paidDate:r['Date']||'',total:parseFloat(r['Invoice - Total']||r['Total']||0)||0}));
   state.gmRows=parseCSV(csv.gm).map(r=>({proj:r['Project']||'',date:r['Date']||'',mi:r['Date']?new Date(r['Date']).getMonth():-1,gm:parseFloat(r['Project Net Gross Margin (Revrec)']||0)||0}));
 
   state.deals=allDeals;
