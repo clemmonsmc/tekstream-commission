@@ -425,10 +425,10 @@ function renderAliasPanel(){
   _ALIST=(state.aliases||[]).slice().sort((a,b)=>a.source_name.localeCompare(b.source_name));
   const opts=[...new Set((state.deals||[]).map(d=>d.name))].sort();
   let h='<datalist id="alias-deal-options">'+opts.map(n=>`<option value="${_esc(n)}">`).join('')+'</datalist>';
-  h+='<div style="font-size:11px;color:#666;margin-bottom:8px;">Source names from the CSVs that do not match a deal. Map each to a deal, or mark No deal. Fixes Cash received and the software/services split.</div>';
+  h+='<div style="font-size:11px;color:#666;margin-bottom:8px;">Project names on your reports (payments, statement, invoices, GM) that do not match one of your deals. Map each to your deal, or mark No deal. This feeds Cash received and the software/services split.</div>';
   if(!_UNRES.length){ h+='<div style="font-size:11px;color:#999;">Nothing unresolved. Every source name matches a deal or is already handled.</div>'; }
   else {
-    h+='<table><thead><tr><th class="left">Unmatched source name</th><th>In</th><th>Pay $</th><th>Stmt paid $</th><th class="left">Map to deal</th><th>Action</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th class="left">Project name on report</th><th>On report</th><th>Payments $</th><th>Statement paid $</th><th class="left">Map to your deal</th><th>Action</th></tr></thead><tbody>';
     _UNRES.forEach((u,i)=>{
       h+=`<tr><td class="left">${_esc(u.name)}</td>`
         +`<td style="font-size:10px;">${[...u.where].join(', ')}</td>`
@@ -442,7 +442,7 @@ function renderAliasPanel(){
   }
   if(_ALIST.length){
     h+='<div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin:14px 0 6px;">Existing mappings</div>';
-    h+='<table><thead><tr><th class="left">Source name</th><th class="left">Resolves to</th><th>Action</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th class="left">Project name on report</th><th class="left">Mapped to your deal</th><th>Action</th></tr></thead><tbody>';
     _ALIST.forEach((a,i)=>{ h+=`<tr><td class="left">${_esc(a.source_name)}</td><td class="left">${a.status==='no_deal'?'<i style="color:#999;">no deal</i>':_esc(a.deal_name||'')}</td><td><button class="config-save" style="padding:2px 8px;" onclick="removeAliasAt(${i})">Remove</button></td></tr>`; });
     h+='</tbody></table>';
   }
