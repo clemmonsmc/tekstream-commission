@@ -395,9 +395,12 @@ async function deleteAlias(source){
 function _bigrams(s){s=(s||'').toLowerCase();const b=[];for(let i=0;i<s.length-1;i++)b.push(s.slice(i,i+2));return b;}
 function _sim(a,b){const A=_bigrams(a),B=_bigrams(b);if(!A.length||!B.length)return 0;const m={};A.forEach(x=>m[x]=(m[x]||0)+1);let inter=0;B.forEach(x=>{if(m[x]>0){inter++;m[x]--;}});return 2*inter/(A.length+B.length);}
 function _closestDeal(name){let best='',bs=0;(state.deals||[]).forEach(d=>{const s=_sim(name,d.name);if(s>bs){bs=s;best=d.name;}});return bs>=0.3?best:'';}
+function _normName(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 function _unresolvedNames(){
   const dealNames=new Set((state.deals||[]).map(d=>d.name));
+  const dealNorms=(state.deals||[]).map(d=>_normName(d.name)).filter(n=>n.length>=10);
   const known=new Set((state.aliases||[]).map(a=>a.source_name));
+  const stmtSet=new Set((state.stmtRows||[]).map(r=>r.project));
   const agg={};
   const add=(name,field,amt)=>{ if(!name)return; if(dealNames.has(resolveName(name)))return; if(known.has(name))return;
     if(!agg[name])agg[name]={pay:0,stmt:0,inv:0,gm:0,where:new Set()}; agg[name][field]+=(amt||0); agg[name].where.add(field); };
@@ -405,7 +408,13 @@ function _unresolvedNames(){
   (state.stmtRows||[]).forEach(r=>{ if(r.paidDate&&String(r.paidDate).trim()) add(r.project,'stmt',r.busCommStmt); });
   (state.invoiceRows||[]).forEach(r=>add(r.proj,'inv',r.total));
   (state.gmRows||[]).forEach(r=>add(r.proj,'gm',r.gm));
-  return Object.keys(agg).map(name=>({name,pay:agg[name].pay,stmt:agg[name].stmt,where:agg[name].where,score:(agg[name].pay+agg[name].stmt)})).sort((a,b)=>b.score-a.score);
+  // Scope to me. Deal pivots are already BD-Director-filtered, so a source name is mine only if it's
+  // in my statement, or it literally contains one of my deal names (an account-prefixed or year-suffixed
+  // variant, e.g. "CFA - <deal> 2026" or "Ingles - <deal>"). Containment, not fuzzy similarity, so other
+  // reps' rows that merely share service words (MDR, Splunk, Cloud Migration) are rejected. No owner column exists.
+  const isMine=(name)=>{ if(stmtSet.has(name))return true; const n=_normName(name); return dealNorms.some(dn=>n.includes(dn)); };
+  return Object.keys(agg).filter(isMine)
+    .map(name=>({name,pay:agg[name].pay,stmt:agg[name].stmt,where:agg[name].where,score:(agg[name].pay+agg[name].stmt)})).sort((a,b)=>b.score-a.score);
 }
 function mapUnres(i){ const u=_UNRES[i]; if(!u)return; const el=document.getElementById('alias-in-'+i); saveAlias(u.name, el?el.value:'', 'mapped'); }
 function noDealUnres(i){ const u=_UNRES[i]; if(!u)return; saveAlias(u.name, '', 'no_deal'); }
