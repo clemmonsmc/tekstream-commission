@@ -233,6 +233,10 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
       <table><thead><tr><th class="left">GM from</th><th class="left">GM to</th><th>Rate</th></tr></thead><tbody id="tier-sw"></tbody></table>
     </div>
   </div>
+  <div class="config-panel">
+    <div class="section-title">Name resolution</div>
+    <div id="alias-panel-wrap"><div style="font-size:11px;color:#999;">Load data to see unmatched names.</div></div>
+  </div>
 </div>
 
 <script>
@@ -240,7 +244,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const SVC_TIERS = [{f:-9999999,t:450000,r:0.05},{f:450001,t:750000,r:0.10},{f:750001,t:1250000,r:0.15},{f:1250001,t:1750000,r:0.20},{f:1750001,t:999999999,r:0.25}];
 const SW_TIERS  = [{f:-9999999,t:200000,r:0.20},{f:200001,t:400000,r:0.25},{f:400001,t:600000,r:0.30},{f:600001,t:800000,r:0.35},{f:800001,t:999999999,r:0.40}];
 
-let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[] };
+let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[], aliases:[] };
 
 // ===== Supabase integration (auth, spiffs, snapshot cache, deltas) =====
 let _sb=null, _user=null, _lastRefreshed=null, _loaded=false, _lastCsv=null;
@@ -299,6 +303,7 @@ async function _onSignedIn(){
     }catch(e){}
   }
   renderSpiffTable();
+  await loadAliasesFromSb();
   await hydrateSnapshot(state.year);
 }
 
@@ -341,6 +346,100 @@ async function saveSpiffsToSb(silent){
   }catch(e){ saveSpiffsLocal(); if(st)st.innerHTML='<span style="color:#A32D2D;">Cloud save FAILED (kept a local copy only): '+e.message+'</span>'; }
 }
 
+// ---- Project-name resolution (aliases): map source-CSV names that don't match a deal name ----
+// resolveName is identity until aliases exist, so this changes no figures until a name is mapped.
+let _ALIAS = {}, _UNRES = [], _ALIST = [];
+function _esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function rebuildAliasMap(){ _ALIAS={}; (state.aliases||[]).forEach(a=>{ if(a.source_name && a.status==='mapped' && a.deal_name) _ALIAS[a.source_name]=a.deal_name; }); }
+function resolveName(n){ return (n && _ALIAS[n]) || n; }
+// Per-deal aggregates from the in-memory source rows, honoring aliases. Identical math to the
+// original inline join when _ALIAS is empty (resolveName is identity); calcComm is unchanged.
+function recomputeDealAggregates(){
+  (state.deals||[]).forEach(d=>{
+    d.invoicedRev=(state.invoiceRows||[]).filter(r=>resolveName(r.proj)===d.name).reduce((a,r)=>a+r.total,0);
+    d.paidRev=(state.paymentRows||[]).filter(r=>resolveName(r.proj)===d.name).reduce((a,r)=>a+r.total,0);
+    const actGmTotal=(state.gmRows||[]).filter(r=>resolveName(r.proj)===d.name).reduce((a,r)=>a+r.gm,0)*d.gmMult;
+    d.invoicedComm=actGmTotal>0?calcComm(actGmTotal,d.type):(d.invoicedRev?calcComm(d.invoicedRev*0.4*d.gmMult,d.type):0);
+    d.paidComm=(d.invoicedComm&&d.invoicedRev)?d.invoicedComm*(d.paidRev/(d.invoicedRev||1)):0;
+  });
+}
+async function loadAliasesFromSb(){
+  if(!_sb||!_user){ state.aliases=[]; rebuildAliasMap(); return false; }
+  try{
+    const {data,error}=await _sb.from('commission_aliases').select('source_name,deal_name,status');
+    if(error)throw error;
+    state.aliases=data||[]; rebuildAliasMap(); return true;
+  }catch(e){ state.aliases=[]; rebuildAliasMap(); return false; }
+}
+async function saveAlias(source,deal,status){
+  source=(source||'').trim(); deal=(deal||'').trim();
+  if(!source)return;
+  if(status==='mapped' && !deal){ setStatus('err','Pick a deal to map to, or use No deal.'); return; }
+  const row={source_name:source, deal_name:status==='mapped'?deal:null, status:status};
+  try{
+    if(_sb&&_user){ const {error}=await _sb.from('commission_aliases').upsert(row,{onConflict:'owner_id,source_name'}); if(error)throw error; }
+    const i=(state.aliases||[]).findIndex(a=>a.source_name===source);
+    if(i>=0)state.aliases[i]=row; else (state.aliases=state.aliases||[]).push(row);
+    rebuildAliasMap(); recomputeDealAggregates(); renderDashboard(); renderAliasPanel();
+    setStatus('ok','Mapping saved. Figures updated.');
+  }catch(e){ setStatus('err','Could not save mapping: '+e.message); }
+}
+async function deleteAlias(source){
+  try{
+    if(_sb&&_user){ const {error}=await _sb.from('commission_aliases').delete().eq('source_name',source); if(error)throw error; }
+    state.aliases=(state.aliases||[]).filter(a=>a.source_name!==source);
+    rebuildAliasMap(); recomputeDealAggregates(); renderDashboard(); renderAliasPanel();
+    setStatus('ok','Mapping removed.');
+  }catch(e){ setStatus('err','Could not remove mapping: '+e.message); }
+}
+function _bigrams(s){s=(s||'').toLowerCase();const b=[];for(let i=0;i<s.length-1;i++)b.push(s.slice(i,i+2));return b;}
+function _sim(a,b){const A=_bigrams(a),B=_bigrams(b);if(!A.length||!B.length)return 0;const m={};A.forEach(x=>m[x]=(m[x]||0)+1);let inter=0;B.forEach(x=>{if(m[x]>0){inter++;m[x]--;}});return 2*inter/(A.length+B.length);}
+function _closestDeal(name){let best='',bs=0;(state.deals||[]).forEach(d=>{const s=_sim(name,d.name);if(s>bs){bs=s;best=d.name;}});return bs>=0.3?best:'';}
+function _unresolvedNames(){
+  const dealNames=new Set((state.deals||[]).map(d=>d.name));
+  const known=new Set((state.aliases||[]).map(a=>a.source_name));
+  const agg={};
+  const add=(name,field,amt)=>{ if(!name)return; if(dealNames.has(resolveName(name)))return; if(known.has(name))return;
+    if(!agg[name])agg[name]={pay:0,stmt:0,inv:0,gm:0,where:new Set()}; agg[name][field]+=(amt||0); agg[name].where.add(field); };
+  (state.paymentRows||[]).forEach(r=>add(r.proj,'pay',r.total));
+  (state.stmtRows||[]).forEach(r=>{ if(r.paidDate&&String(r.paidDate).trim()) add(r.project,'stmt',r.busCommStmt); });
+  (state.invoiceRows||[]).forEach(r=>add(r.proj,'inv',r.total));
+  (state.gmRows||[]).forEach(r=>add(r.proj,'gm',r.gm));
+  return Object.keys(agg).map(name=>({name,pay:agg[name].pay,stmt:agg[name].stmt,where:agg[name].where,score:(agg[name].pay+agg[name].stmt)})).sort((a,b)=>b.score-a.score);
+}
+function mapUnres(i){ const u=_UNRES[i]; if(!u)return; const el=document.getElementById('alias-in-'+i); saveAlias(u.name, el?el.value:'', 'mapped'); }
+function noDealUnres(i){ const u=_UNRES[i]; if(!u)return; saveAlias(u.name, '', 'no_deal'); }
+function removeAliasAt(i){ const a=_ALIST[i]; if(!a)return; deleteAlias(a.source_name); }
+function renderAliasPanel(){
+  const wrap=document.getElementById('alias-panel-wrap'); if(!wrap)return;
+  _UNRES=_unresolvedNames();
+  _ALIST=(state.aliases||[]).slice().sort((a,b)=>a.source_name.localeCompare(b.source_name));
+  const opts=[...new Set((state.deals||[]).map(d=>d.name))].sort();
+  let h='<datalist id="alias-deal-options">'+opts.map(n=>`<option value="${_esc(n)}">`).join('')+'</datalist>';
+  h+='<div style="font-size:11px;color:#666;margin-bottom:8px;">Source names from the CSVs that do not match a deal. Map each to a deal, or mark No deal. Fixes Cash received and the software/services split.</div>';
+  if(!_UNRES.length){ h+='<div style="font-size:11px;color:#999;">Nothing unresolved. Every source name matches a deal or is already handled.</div>'; }
+  else {
+    h+='<table><thead><tr><th class="left">Unmatched source name</th><th>In</th><th>Pay $</th><th>Stmt paid $</th><th class="left">Map to deal</th><th>Action</th></tr></thead><tbody>';
+    _UNRES.forEach((u,i)=>{
+      h+=`<tr><td class="left">${_esc(u.name)}</td>`
+        +`<td style="font-size:10px;">${[...u.where].join(', ')}</td>`
+        +`<td>${u.pay?'$'+Math.round(u.pay).toLocaleString():''}</td>`
+        +`<td>${u.stmt?'$'+Math.round(u.stmt).toLocaleString():''}</td>`
+        +`<td class="left"><input type="text" list="alias-deal-options" id="alias-in-${i}" value="${_esc(_closestDeal(u.name))}" placeholder="Type to search deals…" style="width:100%;" /></td>`
+        +`<td style="white-space:nowrap;"><button class="config-save" style="padding:2px 8px;" onclick="mapUnres(${i})">Map</button>`
+        +`<button class="config-save" style="padding:2px 8px;" onclick="noDealUnres(${i})">No deal</button></td></tr>`;
+    });
+    h+='</tbody></table>';
+  }
+  if(_ALIST.length){
+    h+='<div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin:14px 0 6px;">Existing mappings</div>';
+    h+='<table><thead><tr><th class="left">Source name</th><th class="left">Resolves to</th><th>Action</th></tr></thead><tbody>';
+    _ALIST.forEach((a,i)=>{ h+=`<tr><td class="left">${_esc(a.source_name)}</td><td class="left">${a.status==='no_deal'?'<i style="color:#999;">no deal</i>':_esc(a.deal_name||'')}</td><td><button class="config-save" style="padding:2px 8px;" onclick="removeAliasAt(${i})">Remove</button></td></tr>`; });
+    h+='</tbody></table>';
+  }
+  wrap.innerHTML=h;
+}
+
 // ---- Snapshot: cached read-model so the dashboard loads without a Drive hit ----
 function _snapshotData(){
   return { year:state.year, deals:state.deals, stmtRows:state.stmtRows, invoiceRows:state.invoiceRows, paymentRows:state.paymentRows, gmRows:state.gmRows };
@@ -355,6 +454,7 @@ async function hydrateSnapshot(year){
       state.deals=d.deals||[]; state.stmtRows=d.stmtRows||[]; state.invoiceRows=d.invoiceRows||[];
       state.paymentRows=d.paymentRows||[]; state.gmRows=d.gmRows||[];
       _lastRefreshed=data.captured_at;
+      rebuildAliasMap(); recomputeDealAggregates();
       renderDashboard();
       setStatus('ok','Loaded saved data'+(_lastRefreshed?' from '+new Date(_lastRefreshed).toLocaleString():'')+'. Click Refresh to pull the latest from Drive.');
       return true;
@@ -380,10 +480,10 @@ async function writeSnapshot(){
 
 // ---- Deltas: hub read-model. A=recon (app GM vs stmt Net GM Bus Dev), B=revrec movement vs prior refresh ----
 function _byProjectRevrec(gmRows){
-  const m={}; (gmRows||[]).forEach(r=>{ if(!r.proj)return; m[r.proj]=(m[r.proj]||0)+(r.gm||0); }); return m;
+  const m={}; (gmRows||[]).forEach(r=>{ if(!r.proj)return; const k=resolveName(r.proj); m[k]=(m[k]||0)+(r.gm||0); }); return m;
 }
 function _byProjectStmtNetGm(stmtRows){
-  const m={}; (stmtRows||[]).forEach(r=>{ if(!r.project)return; m[r.project]=(m[r.project]||0)+(r.netGmBusDev||0); }); return m;
+  const m={}; (stmtRows||[]).forEach(r=>{ if(!r.project)return; const k=resolveName(r.project); m[k]=(m[k]||0)+(r.netGmBusDev||0); }); return m;
 }
 async function computeAndWriteDeltas(priorGmRows){
   if(!_sb||!_user)return;
@@ -1166,14 +1266,9 @@ function processCSVs(csv){
   state.paymentRows=parseCSV(csv.pay).map(r=>({proj:r['Invoice - Project']||r['Project']||'',paidDate:r['Date']||'',total:parseFloat(r['Total']||0)||0}));
   state.gmRows=parseCSV(csv.gm).map(r=>({proj:r['Project']||'',date:r['Date']||'',mi:r['Date']?new Date(r['Date']).getMonth():-1,gm:parseFloat(r['Project Net Gross Margin (Revrec)']||0)||0}));
 
-  allDeals.forEach(d=>{
-    d.invoicedRev=state.invoiceRows.filter(r=>r.proj===d.name).reduce((a,r)=>a+r.total,0);
-    d.paidRev=state.paymentRows.filter(r=>r.proj===d.name).reduce((a,r)=>a+r.total,0);
-    const actGmTotal=state.gmRows.filter(r=>r.proj===d.name).reduce((a,r)=>a+r.gm,0)*d.gmMult;
-    d.invoicedComm=actGmTotal>0?calcComm(actGmTotal,d.type):(d.invoicedRev?calcComm(d.invoicedRev*0.4*d.gmMult,d.type):0);
-    d.paidComm=(d.invoicedComm&&d.invoicedRev)?d.invoicedComm*(d.paidRev/(d.invoicedRev||1)):0;
-  });
   state.deals=allDeals;
+  rebuildAliasMap();
+  recomputeDealAggregates();
 }
 
 function renderSample(){
@@ -1227,6 +1322,7 @@ function renderDashboard(){
   }).join('');
 
   renderMonthly();
+  renderAliasPanel();
 }
 
 function renderMonthly(){
