@@ -152,6 +152,8 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   <div class="tbl-wrap" id="monthly-wrap">
     <div style="padding:1rem;font-size:11px;color:#999;">Load data to see monthly breakdown</div>
   </div>
+  <div class="section-title" style="margin-top:1.25rem;">Paycheck vs statement</div>
+  <div class="tbl-wrap" id="paycheck-wrap"></div>
 </div>
 
 <!-- RECONCILIATION -->
@@ -244,7 +246,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const SVC_TIERS = [{f:-9999999,t:450000,r:0.05},{f:450001,t:750000,r:0.10},{f:750001,t:1250000,r:0.15},{f:1250001,t:1750000,r:0.20},{f:1750001,t:999999999,r:0.25}];
 const SW_TIERS  = [{f:-9999999,t:200000,r:0.20},{f:200001,t:400000,r:0.25},{f:400001,t:600000,r:0.30},{f:600001,t:800000,r:0.35},{f:800001,t:999999999,r:0.40}];
 
-let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[], aliases:[] };
+let state = { year:2026, deals:[], stmtRows:[], invoiceRows:[], paymentRows:[], gmRows:[], spiffs:[], aliases:[], paychecks:{} };
 
 // ===== Supabase integration (auth, spiffs, snapshot cache, deltas) =====
 let _sb=null, _user=null, _lastRefreshed=null, _loaded=false, _lastCsv=null;
@@ -304,6 +306,7 @@ async function _onSignedIn(){
   }
   renderSpiffTable();
   await loadAliasesFromSb();
+  await loadPaychecksFromSb();
   await hydrateSnapshot(state.year);
 }
 
@@ -447,6 +450,80 @@ function renderAliasPanel(){
     h+='</tbody></table>';
   }
   wrap.innerHTML=h;
+}
+
+// ---- Paycheck vs statement reconciliation (Monthly tab) ----
+// Statement side is computed from paid stmtRows, typed via the deal join (software vs services+staffing
+// = Consulting; unmatched = Unclassified). Paycheck side is keyed manually and persisted per year/month/type.
+function _pcKey(m,type){ return state.year+'-'+m+'-'+type; }
+function getPaycheck(m,type){ const v=state.paychecks[_pcKey(m,type)]; return (v===undefined||v===null||v==='')?null:parseFloat(v); }
+async function loadPaychecksFromSb(){
+  state.paychecks={};
+  if(!_sb||!_user)return false;
+  try{
+    const {data,error}=await _sb.from('commission_paychecks').select('year,month,type,amount');
+    if(error)throw error;
+    (data||[]).forEach(r=>{ state.paychecks[r.year+'-'+r.month+'-'+r.type]=r.amount; });
+    return true;
+  }catch(e){ return false; }
+}
+let _pcSaveT=null, _pcDirty={};
+function setPaycheckField(m,type,val){
+  if(val!=='' && isNaN(parseFloat(val))) return;
+  const num = val===''? null : parseFloat(val);
+  state.paychecks[_pcKey(m,type)] = (num===null?'':num);
+  _pcDirty[_pcKey(m,type)]={year:state.year,month:m,type,amount:num};
+  schedulePaycheckSave();
+  renderPaycheckRecon();
+}
+function schedulePaycheckSave(){ if(_pcSaveT)clearTimeout(_pcSaveT); _pcSaveT=setTimeout(savePaychecksToSb,800); }
+async function savePaychecksToSb(){
+  if(!_sb||!_user){ setStatus('err','Not signed in — paycheck entries NOT saved.'); return; }
+  const rows=Object.values(_pcDirty); _pcDirty={};
+  if(!rows.length)return;
+  try{
+    const up=rows.filter(r=>r.amount!==null);
+    const del=rows.filter(r=>r.amount===null);
+    if(up.length){ const {error}=await _sb.from('commission_paychecks').upsert(up,{onConflict:'owner_id,year,month,type'}); if(error)throw error; }
+    for(const r of del){ await _sb.from('commission_paychecks').delete().eq('year',r.year).eq('month',r.month).eq('type',r.type); }
+    setStatus('ok','Paycheck entries saved.');
+  }catch(e){ setStatus('err','Paycheck save failed: '+e.message); }
+}
+function renderPaycheckRecon(){
+  const wrap=document.getElementById('paycheck-wrap'); if(!wrap)return;
+  const typeOf={}; (state.deals||[]).forEach(d=>{ typeOf[d.name]=d.type; });
+  const sw=Array(12).fill(0), cons=Array(12).fill(0), uncl=Array(12).fill(0);
+  (state.stmtRows||[]).forEach(r=>{
+    if(!(r.paidDate&&String(r.paidDate).trim()))return;
+    const mi=paidMonthIdx(r.paidDate); if(mi<0)return;
+    const t=typeOf[resolveName(r.project)]; const amt=r.busCommStmt||0;
+    if(t==='software')sw[mi]+=amt; else if(t==='services'||t==='staffing')cons[mi]+=amt; else uncl[mi]+=amt;
+  });
+  const anyUncl=uncl.some(v=>Math.abs(v)>0.005);
+  const active=[]; for(let m=0;m<12;m++){ if(sw[m]||cons[m]||uncl[m]||getPaycheck(m,'software')!=null||getPaycheck(m,'consulting')!=null) active.push(m); }
+  const cell=v=> v?fmt(v):'—';
+  const dcell=d=> d==null?'<span style="color:#bbb;">—</span>':fmtD(d);
+  const del=(pc,st)=> pc==null?null:(pc-st);
+  const inp=(m,type)=>{ const v=getPaycheck(m,type); return `<input type="number" step="0.01" value="${v==null?'':v}" onchange="setPaycheckField(${m},'${type}',this.value)" placeholder="—" style="width:88px;text-align:right;" />`; };
+  if(!active.length){ wrap.innerHTML='<div style="padding:1rem;font-size:11px;color:#999;">No paid statement lines yet. Paycheck entry opens up once the statement shows paid commission.</div>'; return; }
+  let bodyH='', tSwS=0,tSwP=0,tCoS=0,tCoP=0,tUn=0;
+  active.forEach(m=>{
+    const swP=getPaycheck(m,'software'), coP=getPaycheck(m,'consulting');
+    tSwS+=sw[m]; tCoS+=cons[m]; tUn+=uncl[m]; if(swP!=null)tSwP+=swP; if(coP!=null)tCoP+=coP;
+    bodyH+=`<tr><td class="left">${MONTHS[m]}</td>`
+      +`<td>${cell(sw[m])}</td><td>${inp(m,'software')}</td><td>${dcell(del(swP,sw[m]))}</td>`
+      +`<td>${cell(cons[m])}</td><td>${inp(m,'consulting')}</td><td>${dcell(del(coP,cons[m]))}</td>`
+      +(anyUncl?`<td>${cell(uncl[m])}</td>`:'')+`</tr>`;
+  });
+  const tot=`<tr class="subtotal"><td class="left">Total</td>`
+    +`<td>${cell(tSwS)}</td><td>${tSwP?fmt(tSwP):'—'}</td><td>${dcell(tSwP?tSwP-tSwS:null)}</td>`
+    +`<td>${cell(tCoS)}</td><td>${tCoP?fmt(tCoP):'—'}</td><td>${dcell(tCoP?tCoP-tCoS:null)}</td>`
+    +(anyUncl?`<td>${cell(tUn)}</td>`:'')+`</tr>`;
+  wrap.innerHTML=`<div style="font-size:11px;color:#666;margin:4px 4px 8px;">Statement columns are computed from paid commission by deal type (Consulting = services + staffing). Paycheck columns are yours to key and auto-save. Delta = paycheck - statement.${anyUncl?' Unclassified = paid lines not yet mapped to a deal (Config &rarr; Name resolution); they are not in Software or Consulting until mapped.':''}</div>`
+    +`<table><thead>`
+    +`<tr><th class="left" rowspan="2">Month</th><th colspan="3">Software</th><th colspan="3">Consulting</th>${anyUncl?'<th rowspan="2">Unclassified</th>':''}</tr>`
+    +`<tr><th>Statement</th><th>Paycheck</th><th>&Delta;</th><th>Statement</th><th>Paycheck</th><th>&Delta;</th></tr>`
+    +`</thead><tbody>${bodyH}${tot}</tbody></table>`;
 }
 
 // ---- Snapshot: cached read-model so the dashboard loads without a Drive hit ----
@@ -1351,6 +1428,7 @@ function renderMonthly(){
       <tr><td class="left">Stmt comm (paid)</td>${mPaid.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mPaid.reduce((a,b)=>a+b,0))}</td></tr>
       <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
     </tbody></table>`;
+  renderPaycheckRecon();
 }
 
 function renderRecon(){
