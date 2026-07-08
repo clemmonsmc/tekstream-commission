@@ -36,6 +36,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #f8f8f6; c
 .metric-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
 .metric-value { font-size: 22px; font-weight: 500; letter-spacing: -0.5px; color: #111; }
 .metric-sub { font-size: 10px; color: #999; margin-top: 3px; }
+.metric-sub2 { font-size: 10px; color: #7a8aa0; margin-top: 2px; }
 
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
@@ -135,10 +136,10 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 <!-- OVERVIEW -->
 <div id="tab-overview">
   <div class="metrics-grid">
-    <div class="metric-card"><div class="metric-label">Projected comm</div><div class="metric-value" id="m-proj">—</div><div class="metric-sub">Full year est.</div></div>
-    <div class="metric-card"><div class="metric-label">Stmt comm (paid YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub" id="m-stmt-sub">Paid per statement</div></div>
-    <div class="metric-card"><div class="metric-label">Invoiced comm</div><div class="metric-value" id="m-inv">—</div><div class="metric-sub" id="m-inv-sub">Billed to date</div></div>
-    <div class="metric-card"><div class="metric-label">Cash received</div><div class="metric-value" id="m-paid">—</div><div class="metric-sub" id="m-paid-sub">Customer paid</div></div>
+    <div class="metric-card"><div class="metric-label">Projected comm</div><div class="metric-value" id="m-proj">—</div><div class="metric-sub">Full year est.</div><div class="metric-sub2" id="m-proj-r"></div></div>
+    <div class="metric-card"><div class="metric-label">Stmt comm (paid YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub" id="m-stmt-sub">Paid per statement</div><div class="metric-sub2" id="m-stmt-r"></div></div>
+    <div class="metric-card"><div class="metric-label">Invoiced comm</div><div class="metric-value" id="m-inv">—</div><div class="metric-sub" id="m-inv-sub">Billed to date</div><div class="metric-sub2" id="m-inv-r"></div></div>
+    <div class="metric-card"><div class="metric-label">Cash received</div><div class="metric-value" id="m-paid">—</div><div class="metric-sub" id="m-paid-sub">Customer paid</div><div class="metric-sub2" id="m-paid-r"></div></div>
   </div>
 
   <div class="section">
@@ -307,6 +308,7 @@ async function _onSignedIn(){
   renderSpiffTable();
   await loadAliasesFromSb();
   await loadPaychecksFromSb();
+  await loadValueHistory();
   await hydrateSnapshot(state.year);
 }
 
@@ -562,6 +564,35 @@ async function writeSnapshot(){
     await _sb.from('commission_snapshot').upsert({year:state.year,captured_at:new Date().toISOString(),data:_snapshotData()},{onConflict:'owner_id,year'});
     _lastRefreshed=new Date().toISOString();
   }catch(e){/* non-fatal: dashboard still works from memory */}
+}
+
+// ---- Value history (2b): append-only record of headline totals + per-deal figures, one row per refresh ----
+function _currentTotals(){
+  return {
+    proj: (state.deals||[]).reduce((a,d)=>a+(d.projComm||0),0),
+    stmt: (state.stmtRows||[]).filter(r=>r.paidDate&&String(r.paidDate).trim()).reduce((a,r)=>a+(r.busCommStmt||0),0),
+    inv:  (state.deals||[]).reduce((a,d)=>a+(d.invoicedComm||0),0),
+    paid: (state.deals||[]).reduce((a,d)=>a+(d.paidComm||0),0)
+  };
+}
+async function loadValueHistory(){
+  state._prevTotals=null; state._histLatestTotals=null;
+  if(!_sb||!_user)return;
+  try{
+    const {data,error}=await _sb.from('commission_value_history').select('totals').eq('year',state.year).order('captured_at',{ascending:false}).limit(2);
+    if(error)throw error;
+    if(data&&data[0])state._histLatestTotals=data[0].totals;
+    if(data&&data[1])state._prevTotals=data[1].totals; // hydrate baseline: the refresh before the latest
+  }catch(e){}
+}
+async function writeValueHistory(){
+  if(!_sb||!_user)return;
+  const totals=_currentTotals(); const deals={};
+  (state.deals||[]).forEach(d=>{ deals[d.name]={projComm:d.projComm||0,invoicedComm:d.invoicedComm||0,paidComm:d.paidComm||0,projGm:d.projGm||0}; });
+  try{
+    await _sb.from('commission_value_history').insert({year:state.year,captured_at:new Date().toISOString(),totals,deals});
+    state._histLatestTotals=totals; // next refresh's card delta compares against this
+  }catch(e){/* non-fatal */}
 }
 
 // ---- Deltas: hub read-model. A=recon (app GM vs stmt Net GM Bus Dev), B=revrec movement vs prior refresh ----
@@ -1280,8 +1311,10 @@ async function loadData(){
     await loadSpiffReviews();
     renderSpiffTable();
     renderSpiffReview();
+    state._prevTotals = state._histLatestTotals || state._prevTotals;
     renderDashboard();
     await writeSnapshot();
+    await writeValueHistory();
     await computeAndWriteDeltas(_priorGmRows);
     const note=missing.length?` — missing: ${missing.join(', ')}`:' — all files loaded';
     setStatus('ok',`Live data from Drive${note}. Saved + refreshed ${new Date().toLocaleTimeString()}`);
@@ -1397,6 +1430,11 @@ function renderDashboard(){
   document.getElementById('m-paid').textContent=fmt(totPaid);
   {const e=document.getElementById('m-inv-sub');if(e)e.innerHTML='vs stmt '+fmtD(totInv-totStmt);}
   {const e=document.getElementById('m-paid-sub');if(e)e.innerHTML='vs inv '+fmtD(totPaid-totInv);}
+  {const p=state._prevTotals; const rd=(cur,k)=>(!p||p[k]==null)?'':('since last refresh '+fmtD(cur-p[k])); let e;
+   e=document.getElementById('m-proj-r'); if(e)e.innerHTML=rd(totProj,'proj');
+   e=document.getElementById('m-stmt-r'); if(e)e.innerHTML=rd(totStmt,'stmt');
+   e=document.getElementById('m-inv-r');  if(e)e.innerHTML=rd(totInv,'inv');
+   e=document.getElementById('m-paid-r'); if(e)e.innerHTML=rd(totPaid,'paid');}
 
   const byType={};
   deals.forEach(d=>{if(!byType[d.type])byType[d.type]={gm:0,comm:0};byType[d.type].gm+=(d.projGm||0);byType[d.type].comm+=(d.projComm||0);});
