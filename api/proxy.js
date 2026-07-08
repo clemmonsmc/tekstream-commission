@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const auth = { 'Authorization': 'Bearer ' + accessToken };
 
     if (action === 'list') {
-      const r = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100", { headers: auth });
+      const r = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+trashed=false&fields=files(id,name,mimeType,modifiedTime)&pageSize=100", { headers: auth });
       return res.json(await r.json());
     }
 

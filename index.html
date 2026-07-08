@@ -24,6 +24,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #f8f8f6; c
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
 .status-dot.ok { background: #3B6D11; }
 .status-dot.err { background: #A32D2D; }
+.status-dot.warn { background: #B8860B; }
 .status-dot.loading { background: #854F0B; animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
 
@@ -530,7 +531,7 @@ function renderPaycheckRecon(){
 
 // ---- Snapshot: cached read-model so the dashboard loads without a Drive hit ----
 function _snapshotData(){
-  return { year:state.year, deals:state.deals, stmtRows:state.stmtRows, invoiceRows:state.invoiceRows, paymentRows:state.paymentRows, gmRows:state.gmRows };
+  return { year:state.year, deals:state.deals, stmtRows:state.stmtRows, invoiceRows:state.invoiceRows, paymentRows:state.paymentRows, gmRows:state.gmRows, fileMods:state._fileMods||{} };
 }
 async function hydrateSnapshot(year){
   if(!_sb||!_user)return false;
@@ -541,6 +542,7 @@ async function hydrateSnapshot(year){
       const d=data.data;
       state.deals=d.deals||[]; state.stmtRows=d.stmtRows||[]; state.invoiceRows=d.invoiceRows||[];
       state.paymentRows=d.paymentRows||[]; state.gmRows=d.gmRows||[];
+      state._fileMods=d.fileMods||{};
       _lastRefreshed=data.captured_at;
       rebuildAliasMap(); recomputeDealAggregates();
       renderDashboard();
@@ -1225,11 +1227,12 @@ async function loadData(){
     setStatus('loading',`Found ${files.length} file(s). Loading reports...`);
     const find=fname=>files.find(f=>f.name&&(f.name.toLowerCase()===fname.toLowerCase()||f.name.toLowerCase()===fname.toLowerCase().replace(/\.csv$/i,'')));
 
-    const csv={};const missing=[];
+    const csv={};const missing=[];const curMods={};
     for(const {key,id} of fileCfg){
       const fname=document.getElementById(id).value.trim();
       const file=find(fname);
       if(!file){missing.push(key);continue;}
+      if(file.modifiedTime)curMods[key]=file.modifiedTime;
       try{csv[key]=await driveGet(file.id);}
       catch(e){missing.push(key);}
     }
@@ -1246,6 +1249,7 @@ async function loadData(){
     // Load commission statement
     const stmtFname=document.getElementById('cfg-stmt').value.trim();
     const stmtFile=find(stmtFname);
+    if(stmtFile&&stmtFile.modifiedTime)curMods['stmt']=stmtFile.modifiedTime;
     state.stmtRows=[];
     if(stmtFile){
       const yr=state.year;
@@ -1316,8 +1320,13 @@ async function loadData(){
     await writeSnapshot();
     await writeValueHistory();
     await computeAndWriteDeltas(_priorGmRows);
+    const _LBL={svc:'Services',sw:'Software',staff:'Staffing',inv:'Invoices',pay:'Payments',gm:'GM pivot',stmt:'Statement'};
+    const _priorMods=state._fileMods||{};
+    const _stale=Object.keys(curMods).filter(k=>_priorMods[k]&&curMods[k]&&_priorMods[k]===curMods[k]);
+    state._fileMods=curMods;
     const note=missing.length?` — missing: ${missing.join(', ')}`:' — all files loaded';
-    setStatus('ok',`Live data from Drive${note}. Saved + refreshed ${new Date().toLocaleTimeString()}`);
+    const staleNote=_stale.length?` — unchanged since last refresh: ${_stale.map(k=>_LBL[k]||k).join(', ')}`:'';
+    setStatus(_stale.length?'warn':'ok',`Live data from Drive${note}${staleNote}. Saved + refreshed ${new Date().toLocaleTimeString()}`);
   }catch(err){
     setStatus('err','Drive error: '+err.message+'. Showing sample data.');
     renderSample();
