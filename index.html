@@ -1460,7 +1460,14 @@ function renderDashboard(){
 
 function renderMonthly(){
   const mGm=Array(12).fill(0),mProj=Array(12).fill(0),mStmt=Array(12).fill(0),mPaid=Array(12).fill(0);
-  state.deals.forEach(d=>{if(d.months)Object.entries(d.months).forEach(([m,gm])=>{const mi=parseInt(m);mGm[mi]+=gm;mProj[mi]+=calcComm(gm,d.type);});});
+  // Proj comm per month = each deal's ANNUAL projected commission (tiered on cumulative per-type GM,
+  // i.e. the Overview figure) spread across months by that deal's monthly GM share. Do NOT re-run
+  // calcComm per month: the tier is progressive, so re-tiering each slice from zero understates badly.
+  state.deals.forEach(d=>{
+    if(!d.months)return;
+    const denom=Object.values(d.months).reduce((a,g)=>a+(g||0),0);
+    Object.entries(d.months).forEach(([m,gm])=>{const mi=parseInt(m);mGm[mi]+=gm;if(denom>0)mProj[mi]+=(d.projComm||0)*((gm||0)/denom);});
+  });
   state.stmtRows.forEach(r=>{
     if(r.monthIdx>=0)mStmt[r.monthIdx]+=(r.busCommStmt||0);
     // Paid lens: bucket commission by the month it was paid, when a payment date exists.
