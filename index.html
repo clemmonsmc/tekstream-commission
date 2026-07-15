@@ -1214,6 +1214,17 @@ function paidMonthIdx(s){
   const d=new Date(t);
   return isNaN(d)?-1:d.getMonth();
 }
+// Absolute month (year*12 + monthIdx) for lag math across year boundaries. Same parsing as paidMonthIdx.
+function paidAbsMonth(s){
+  if(!s)return null;
+  const t=String(s).trim();
+  let m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m)return parseInt(m[1],10)*12+(parseInt(m[2],10)-1);
+  m=t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if(m){let y=parseInt(m[3],10); if(y<100)y+=2000; return y*12+(parseInt(m[1],10)-1);}
+  const d=new Date(t);
+  return isNaN(d.getTime())?null:(d.getFullYear()*12+d.getMonth());
+}
 
 async function loadData(){
   const btn=document.getElementById('refresh-btn'),icon=document.getElementById('refresh-icon');
@@ -1482,6 +1493,21 @@ function renderMonthly(){
     // Paid lens: bucket commission by the month it was paid, when a payment date exists.
     if(r.paidDate&&r.paidDate.trim()){const pmi=paidMonthIdx(r.paidDate);if(pmi>=0)mPaid[pmi]+=(r.busCommStmt||0);}
   });
+  // Projected payments: measure the pay lag from paid statement lines (payment month minus earning
+  // month, weighted by $), then spread each earning month's projected commission forward by that
+  // distribution. Data-derived, no manual input. Fallback to +3 months if no paid history yet.
+  const lagW={}; let lagTot=0;
+  state.stmtRows.forEach(r=>{
+    if(!(r.paidDate&&r.paidDate.trim()))return; const comm=r.busCommStmt||0; if(!comm)return;
+    const pam=paidAbsMonth(r.paidDate); if(pam==null)return;
+    const lag=pam-(state.year*12+r.monthIdx);
+    if(lag<0||lag>12)return; lagW[lag]=(lagW[lag]||0)+comm; lagTot+=comm;
+  });
+  const lagDist={}; if(lagTot>0){Object.keys(lagW).forEach(k=>lagDist[k]=lagW[k]/lagTot);} else {lagDist[3]=1;}
+  const mProjPay=Array(12).fill(0);
+  for(let m=0;m<12;m++){ if(!mProj[m])continue; Object.keys(lagDist).forEach(L=>{const pm=m+parseInt(L); if(pm>=0&&pm<12)mProjPay[pm]+=mProj[m]*lagDist[L];}); }
+  // Delta only where actual payments exist (past months) — future months have no actual to compare.
+  let dPaid=0,dProj=0; mPaid.forEach((v,i)=>{ if(v>0){dPaid+=v;dProj+=mProjPay[i];} });
   document.getElementById('monthly-wrap').innerHTML=`<table>
     <thead><tr><th class="left">Metric</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>
@@ -1489,6 +1515,8 @@ function renderMonthly(){
       <tr><td class="left">Proj comm</td>${mProj.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProj.reduce((a,b)=>a+b,0))}</td></tr>
       <tr><td class="left">Stmt comm (earned)</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
       <tr><td class="left">Stmt comm (paid)</td>${mPaid.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mPaid.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Projected payments</td>${mProjPay.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProjPay.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr class="subtotal"><td class="left">Δ (paid − projected)</td>${mPaid.map((v,i)=>`<td>${v>0?fmtD(v-mProjPay[i]):'—'}</td>`).join('')}<td>${fmtD(dPaid-dProj)}</td></tr>
       <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
     </tbody></table>`;
   renderPaycheckRecon();
