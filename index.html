@@ -1510,6 +1510,7 @@ function renderMonthly(){
   const _now=new Date(), _curAbs=_now.getFullYear()*12+_now.getMonth();
   const paidMonthDone=(m)=>{ const a=state.year*12+m; return a<_curAbs || (a===_curAbs && _now.getDate()>=15); };
   let dPaid=0,dProj=0; mPaid.forEach((v,i)=>{ if(paidMonthDone(i)){dPaid+=v;dProj+=mProjPay[i];} });
+  let dStmt=0,dSProj=0; mStmt.forEach((v,i)=>{ if(v>0){dStmt+=v;dSProj+=mProj[i];} });
   document.getElementById('monthly-wrap').innerHTML=`<table>
     <thead><tr><th class="left">Metric</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>
@@ -1519,7 +1520,7 @@ function renderMonthly(){
       <tr><td class="left">Stmt comm (paid)</td>${mPaid.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mPaid.reduce((a,b)=>a+b,0))}</td></tr>
       <tr><td class="left">Projected payments</td>${mProjPay.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProjPay.reduce((a,b)=>a+b,0))}</td></tr>
       <tr class="subtotal"><td class="left">Δ (paid − projected)</td>${mPaid.map((v,i)=>`<td>${paidMonthDone(i)?fmtD(v-mProjPay[i]):'—'}</td>`).join('')}<td>${fmtD(dPaid-dProj)}</td></tr>
-      <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${v>0?fmtD(v-mProj[i]):'—'}</td>`).join('')}<td>${fmtD(dStmt-dSProj)}</td></tr>
     </tbody></table>`;
   renderPaycheckRecon();
 }
