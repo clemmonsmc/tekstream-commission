@@ -1506,8 +1506,10 @@ function renderMonthly(){
   const lagDist={}; if(lagTot>0){Object.keys(lagW).forEach(k=>lagDist[k]=lagW[k]/lagTot);} else {lagDist[3]=1;}
   const mProjPay=Array(12).fill(0);
   for(let m=0;m<12;m++){ if(!mProj[m])continue; Object.keys(lagDist).forEach(L=>{const pm=m+parseInt(L); if(pm>=0&&pm<12)mProjPay[pm]+=mProj[m]*lagDist[L];}); }
-  // Delta only where actual payments exist (past months) — future months have no actual to compare.
-  let dPaid=0,dProj=0; mPaid.forEach((v,i)=>{ if(v>0){dPaid+=v;dProj+=mProjPay[i];} });
+  // Delta only for months whose pay date (the 15th) has passed — future/scheduled payments excluded.
+  const _now=new Date(), _curAbs=_now.getFullYear()*12+_now.getMonth();
+  const paidMonthDone=(m)=>{ const a=state.year*12+m; return a<_curAbs || (a===_curAbs && _now.getDate()>=15); };
+  let dPaid=0,dProj=0; mPaid.forEach((v,i)=>{ if(paidMonthDone(i)){dPaid+=v;dProj+=mProjPay[i];} });
   document.getElementById('monthly-wrap').innerHTML=`<table>
     <thead><tr><th class="left">Metric</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>
@@ -1516,7 +1518,7 @@ function renderMonthly(){
       <tr><td class="left">Stmt comm (earned)</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
       <tr><td class="left">Stmt comm (paid)</td>${mPaid.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mPaid.reduce((a,b)=>a+b,0))}</td></tr>
       <tr><td class="left">Projected payments</td>${mProjPay.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProjPay.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr class="subtotal"><td class="left">Δ (paid − projected)</td>${mPaid.map((v,i)=>`<td>${v>0?fmtD(v-mProjPay[i]):'—'}</td>`).join('')}<td>${fmtD(dPaid-dProj)}</td></tr>
+      <tr class="subtotal"><td class="left">Δ (paid − projected)</td>${mPaid.map((v,i)=>`<td>${paidMonthDone(i)?fmtD(v-mProjPay[i]):'—'}</td>`).join('')}<td>${fmtD(dPaid-dProj)}</td></tr>
       <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${fmtD(v-mProj[i])}</td>`).join('')}<td>${fmtD(mStmt.reduce((a,b)=>a+b,0)-mProj.reduce((a,b)=>a+b,0))}</td></tr>
     </tbody></table>`;
   renderPaycheckRecon();
