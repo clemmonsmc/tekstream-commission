@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Commission Dashboard</title>
+<title>Pipeline Console</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: system-ui, -apple-system, sans-serif; background: #f8f8f6; color: #1a1a1a; font-size: 14px; }
@@ -103,7 +103,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     <div id="gate-msg" style="font-size:11px;color:#A32D2D;margin-top:14px;min-height:14px;"></div>
   </div>
 </div>
-<nav class="xapp-nav"><a class="xapp-home" href="https://tekstream-hub.vercel.app" title="TekStream Hub"><img src="data:image/png;base64,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" alt="Home"></a><a href="https://tekstream-quotes.vercel.app">Quote</a><span class="xapp-cur">Commission</span><a href="https://tekstream-expenses.vercel.app">Expense</a><a href="https://tekstream-map.vercel.app">MAP</a></nav>
+<nav class="xapp-nav"><a class="xapp-home" href="https://tekstream-hub.vercel.app" title="TekStream Hub"><img src="data:image/png;base64,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" alt="Home"></a><a href="https://tekstream-quotes.vercel.app">Quote</a><span class="xapp-cur">Pipeline</span><a href="https://tekstream-expenses.vercel.app">Expense</a><a href="https://tekstream-map.vercel.app">MAP</a></nav>
 <div class="app">
 
 <div class="header">
@@ -137,10 +137,10 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 <!-- OVERVIEW -->
 <div id="tab-overview">
   <div class="metrics-grid">
-    <div class="metric-card"><div class="metric-label">Projected comm</div><div class="metric-value" id="m-proj">—</div><div class="metric-sub">Full year est.</div><div class="metric-sub2" id="m-proj-r"></div></div>
-    <div class="metric-card"><div class="metric-label">Stmt comm (paid YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub" id="m-stmt-sub">Paid per statement</div><div class="metric-sub2" id="m-stmt-r"></div></div>
-    <div class="metric-card"><div class="metric-label">Invoiced comm</div><div class="metric-value" id="m-inv">—</div><div class="metric-sub" id="m-inv-sub">Billed to date</div><div class="metric-sub2" id="m-inv-r"></div></div>
-    <div class="metric-card"><div class="metric-label">Cash received</div><div class="metric-value" id="m-paid">—</div><div class="metric-sub" id="m-paid-sub">Customer paid</div><div class="metric-sub2" id="m-paid-r"></div></div>
+    <div class="metric-card"><div class="metric-label">Projected value</div><div class="metric-value" id="m-proj">—</div><div class="metric-sub">Full year est.</div><div class="metric-sub2" id="m-proj-r"></div></div>
+    <div class="metric-card"><div class="metric-label">Statement (YTD)</div><div class="metric-value" id="m-stmt">—</div><div class="metric-sub" id="m-stmt-sub">Paid per statement</div><div class="metric-sub2" id="m-stmt-r"></div></div>
+    <div class="metric-card"><div class="metric-label">Billed (YTD)</div><div class="metric-value" id="m-inv">—</div><div class="metric-sub" id="m-inv-sub">Billed to date</div><div class="metric-sub2" id="m-inv-r"></div></div>
+    <div class="metric-card"><div class="metric-label">Collected</div><div class="metric-value" id="m-paid">—</div><div class="metric-sub" id="m-paid-sub">Customer paid</div><div class="metric-sub2" id="m-paid-r"></div></div>
   </div>
 
   <div class="section">
@@ -154,7 +154,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   <div class="tbl-wrap" id="monthly-wrap">
     <div style="padding:1rem;font-size:11px;color:#999;">Load data to see monthly breakdown</div>
   </div>
-  <div class="section-title" style="margin-top:1.25rem;">Paycheck vs statement</div>
+  <div class="section-title" style="margin-top:1.25rem;">Recorded vs actual</div>
   <div class="tbl-wrap" id="paycheck-wrap"></div>
 </div>
 
@@ -522,10 +522,10 @@ function renderPaycheckRecon(){
     +`<td>${cell(tSwS)}</td><td>${tSwP?fmt(tSwP):'—'}</td><td>${dcell(tSwP?tSwP-tSwS:null)}</td>`
     +`<td>${cell(tCoS)}</td><td>${tCoP?fmt(tCoP):'—'}</td><td>${dcell(tCoP?tCoP-tCoS:null)}</td>`
     +(anyUncl?`<td>${cell(tUn)}</td>`:'')+`</tr>`;
-  wrap.innerHTML=`<div style="font-size:11px;color:#666;margin:4px 4px 8px;">Statement columns are computed from paid commission by deal type (Consulting = services + staffing). Paycheck columns are yours to key and auto-save. Delta = paycheck - statement.${anyUncl?' Unclassified = paid lines not yet mapped to a deal (Config &rarr; Name resolution); they are not in Software or Consulting until mapped.':''}</div>`
+  wrap.innerHTML=`<div style="font-size:11px;color:#666;margin:4px 4px 8px;">Recorded columns are computed from paid commission by deal type (Consulting = services + staffing). Actual columns are yours to key and auto-save. Delta = actual - recorded.${anyUncl?' Unclassified = paid lines not yet mapped to a deal (Config &rarr; Name resolution); they are not in Software or Consulting until mapped.':''}</div>`
     +`<table><thead>`
     +`<tr><th class="left" rowspan="2">Month</th><th colspan="3">Software</th><th colspan="3">Consulting</th>${anyUncl?'<th rowspan="2">Unclassified</th>':''}</tr>`
-    +`<tr><th>Statement</th><th>Paycheck</th><th>&Delta;</th><th>Statement</th><th>Paycheck</th><th>&Delta;</th></tr>`
+    +`<tr><th>Recorded</th><th>Actual</th><th>&Delta;</th><th>Recorded</th><th>Actual</th><th>&Delta;</th></tr>`
     +`</thead><tbody>${bodyH}${tot}</tbody></table>`;
 }
 
@@ -578,22 +578,23 @@ function _currentTotals(){
   };
 }
 async function loadValueHistory(){
-  state._prevTotals=null; state._histLatestTotals=null;
+  state._prevTotals=null; state._histLatestTotals=null; state._prevMonthly=null; state._histLatestMonthly=null;
   if(!_sb||!_user)return;
   try{
-    const {data,error}=await _sb.from('commission_value_history').select('totals').eq('year',state.year).order('captured_at',{ascending:false}).limit(2);
+    const {data,error}=await _sb.from('commission_value_history').select('totals,monthly').eq('year',state.year).order('captured_at',{ascending:false}).limit(2);
     if(error)throw error;
-    if(data&&data[0])state._histLatestTotals=data[0].totals;
-    if(data&&data[1])state._prevTotals=data[1].totals; // hydrate baseline: the refresh before the latest
+    if(data&&data[0]){state._histLatestTotals=data[0].totals; state._histLatestMonthly=data[0].monthly;}
+    if(data&&data[1]){state._prevTotals=data[1].totals; state._prevMonthly=data[1].monthly;} // hydrate baseline: the refresh before the latest
   }catch(e){}
 }
 async function writeValueHistory(){
   if(!_sb||!_user)return;
   const totals=_currentTotals(); const deals={};
   (state.deals||[]).forEach(d=>{ deals[d.name]={projComm:d.projComm||0,invoicedComm:d.invoicedComm||0,paidComm:d.paidComm||0,projGm:d.projGm||0}; });
+  const monthly=computeMonthlySeries();
   try{
-    await _sb.from('commission_value_history').insert({year:state.year,captured_at:new Date().toISOString(),totals,deals});
-    state._histLatestTotals=totals; // next refresh's card delta compares against this
+    await _sb.from('commission_value_history').insert({year:state.year,captured_at:new Date().toISOString(),totals,deals,monthly});
+    state._histLatestTotals=totals; state._histLatestMonthly=monthly; // next refresh's deltas compare against this
   }catch(e){/* non-fatal */}
 }
 
@@ -1336,6 +1337,7 @@ async function loadData(){
     renderSpiffTable();
     renderSpiffReview();
     state._prevTotals = state._histLatestTotals || state._prevTotals;
+    state._prevMonthly = state._histLatestMonthly || state._prevMonthly;
     renderDashboard();
     await writeSnapshot();
     await writeValueHistory();
@@ -1478,49 +1480,57 @@ function renderDashboard(){
   renderAliasPanel();
 }
 
-function renderMonthly(){
-  const mGm=Array(12).fill(0),mProj=Array(12).fill(0),mStmt=Array(12).fill(0),mPaid=Array(12).fill(0);
-  // Proj comm per month = each deal's ANNUAL projected commission (tiered on cumulative per-type GM,
-  // i.e. the Overview figure) spread across months by that deal's monthly GM share. Do NOT re-run
-  // calcComm per month: the tier is progressive, so re-tiering each slice from zero understates badly.
+function computeMonthlySeries(){
+  const mGm=Array(12).fill(0),mProj=Array(12).fill(0);
   state.deals.forEach(d=>{
     if(!d.months)return;
     const denom=Object.values(d.months).reduce((a,g)=>a+(g||0),0);
     Object.entries(d.months).forEach(([m,gm])=>{const mi=parseInt(m);mGm[mi]+=gm;if(denom>0)mProj[mi]+=(d.projComm||0)*((gm||0)/denom);});
   });
-  state.stmtRows.forEach(r=>{
-    if(r.monthIdx>=0)mStmt[r.monthIdx]+=(r.busCommStmt||0);
-    // Paid lens: bucket commission by the month it was paid, when a payment date exists.
-    if(r.paidDate&&r.paidDate.trim()){const pmi=paidMonthIdx(r.paidDate);if(pmi>=0)mPaid[pmi]+=(r.busCommStmt||0);}
-  });
-  // Projected payments: measure the pay lag from paid statement lines (payment month minus earning
-  // month, weighted by $), then spread each earning month's projected commission forward by that
-  // distribution. Data-derived, no manual input. Fallback to +3 months if no paid history yet.
   const lagW={}; let lagTot=0;
   state.stmtRows.forEach(r=>{
     if(!(r.paidDate&&r.paidDate.trim()))return; const comm=r.busCommStmt||0; if(!comm)return;
     const pam=paidAbsMonth(r.paidDate); if(pam==null)return;
-    const lag=pam-(state.year*12+r.monthIdx);
-    if(lag<0||lag>12)return; lagW[lag]=(lagW[lag]||0)+comm; lagTot+=comm;
+    const lag=pam-(state.year*12+r.monthIdx); if(lag<0||lag>12)return; lagW[lag]=(lagW[lag]||0)+comm; lagTot+=comm;
   });
   const lagDist={}; if(lagTot>0){Object.keys(lagW).forEach(k=>lagDist[k]=lagW[k]/lagTot);} else {lagDist[3]=1;}
   const mProjPay=Array(12).fill(0);
   for(let m=0;m<12;m++){ if(!mProj[m])continue; Object.keys(lagDist).forEach(L=>{const pm=m+parseInt(L); if(pm>=0&&pm<12)mProjPay[pm]+=mProj[m]*lagDist[L];}); }
-  // Delta only for months whose pay date (the 15th) has passed — future/scheduled payments excluded.
+  return {gm:mGm,proj:mProj,pay:mProjPay};
+}
+function renderMonthly(){
+  const _s=computeMonthlySeries();
+  const mGm=_s.gm, mProj=_s.proj, mProjPay=_s.pay;
+  const mStmt=Array(12).fill(0),mPaid=Array(12).fill(0);
+  state.stmtRows.forEach(r=>{
+    if(r.monthIdx>=0)mStmt[r.monthIdx]+=(r.busCommStmt||0);
+    if(r.paidDate&&r.paidDate.trim()){const pmi=paidMonthIdx(r.paidDate);if(pmi>=0)mPaid[pmi]+=(r.busCommStmt||0);}
+  });
   const _now=new Date(), _curAbs=_now.getFullYear()*12+_now.getMonth();
   const paidMonthDone=(m)=>{ const a=state.year*12+m; return a<_curAbs || (a===_curAbs && _now.getDate()>=15); };
   let dPaid=0,dProj=0; mPaid.forEach((v,i)=>{ if(paidMonthDone(i)){dPaid+=v;dProj+=mProjPay[i];} });
   let dStmt=0,dSProj=0; mStmt.forEach((v,i)=>{ if(v>0){dStmt+=v;dSProj+=mProj[i];} });
+  // Δ since last data refresh, per month, for each projected row (from stored value history).
+  const _pm=state._prevMonthly||{};
+  const _drow=(cur,prev)=>{
+    if(!prev)return '';
+    const cells=cur.map((v,i)=>{ if(prev[i]==null)return '<td>—</td>'; const d=v-prev[i]; return '<td>'+(Math.abs(d)<0.005?'—':fmtD(d))+'</td>'; }).join('');
+    const tot=cur.reduce((a,b)=>a+b,0)-prev.reduce((a,b)=>a+(b||0),0);
+    return '<tr class="subtotal"><td class="left">Δ vs last refresh</td>'+cells+'<td>'+(Math.abs(tot)<0.005?'—':fmtD(tot))+'</td></tr>';
+  };
   document.getElementById('monthly-wrap').innerHTML=`<table>
     <thead><tr><th class="left">Metric</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>
-      <tr><td class="left">Proj GM</td>${mGm.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mGm.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr><td class="left">Proj comm</td>${mProj.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProj.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr><td class="left">Stmt comm (earned)</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr><td class="left">Stmt comm (paid)</td>${mPaid.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mPaid.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr><td class="left">Projected payments</td>${mProjPay.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProjPay.reduce((a,b)=>a+b,0))}</td></tr>
-      <tr class="subtotal"><td class="left">Δ (paid − projected)</td>${mPaid.map((v,i)=>`<td>${paidMonthDone(i)?fmtD(v-mProjPay[i]):'—'}</td>`).join('')}<td>${fmtD(dPaid-dProj)}</td></tr>
-      <tr class="subtotal"><td class="left">Delta (stmt − proj)</td>${mStmt.map((v,i)=>`<td>${v>0?fmtD(v-mProj[i]):'—'}</td>`).join('')}<td>${fmtD(dStmt-dSProj)}</td></tr>
+      <tr><td class="left">Proj margin</td>${mGm.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mGm.reduce((a,b)=>a+b,0))}</td></tr>
+      ${_drow(mGm,_pm.gm)}
+      <tr><td class="left">Proj value</td>${mProj.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProj.reduce((a,b)=>a+b,0))}</td></tr>
+      ${_drow(mProj,_pm.proj)}
+      <tr><td class="left">Statement (earned)</td>${mStmt.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mStmt.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Collected</td>${mPaid.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mPaid.reduce((a,b)=>a+b,0))}</td></tr>
+      <tr><td class="left">Projected</td>${mProjPay.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')}<td>${fmt(mProjPay.reduce((a,b)=>a+b,0))}</td></tr>
+      ${_drow(mProjPay,_pm.pay)}
+      <tr class="subtotal"><td class="left">Δ (collected − projected)</td>${mPaid.map((v,i)=>`<td>${paidMonthDone(i)?fmtD(v-mProjPay[i]):'—'}</td>`).join('')}<td>${fmtD(dPaid-dProj)}</td></tr>
+      <tr class="subtotal"><td class="left">Δ (statement − proj)</td>${mStmt.map((v,i)=>`<td>${v>0?fmtD(v-mProj[i]):'—'}</td>`).join('')}<td>${fmtD(dStmt-dSProj)}</td></tr>
     </tbody></table>`;
   renderPaycheckRecon();
 }
