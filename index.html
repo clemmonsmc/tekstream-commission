@@ -1230,10 +1230,7 @@ function paidAbsMonth(s){
   return isNaN(d.getTime())?null:(d.getFullYear()*12+d.getMonth());
 }
 
-async function loadData(){
-  const btn=document.getElementById('refresh-btn'),icon=document.getElementById('refresh-icon');
-  btn.classList.add('loading');icon.className='spin';icon.textContent='↻';
-  setStatus('loading','Connecting to Google Drive...');
+async function loadYearData(){
   const _priorGmRows = await readPriorGmRows(state.year);
 
   const fid=document.getElementById('cfg-folder').value.trim();
@@ -1244,9 +1241,7 @@ async function loadData(){
 
   try{
     const files=await driveList(fid);
-    if(!files.length){setStatus('err','Could not list Drive folder. Check folder ID.');renderSample();return;}
-
-    setStatus('loading',`Found ${files.length} file(s). Loading reports...`);
+    if(!files.length){throw new Error('Could not list Drive folder. Check folder ID.');}
     const find=fname=>files.find(f=>f.name&&(f.name.toLowerCase()===fname.toLowerCase()||f.name.toLowerCase()===fname.toLowerCase().replace(/\.csv$/i,'')));
 
     const csv={};const missing=[];const curMods={};
@@ -1337,25 +1332,45 @@ async function loadData(){
     _lastCsv=csv;
     processCSVs(csv);
     await loadSpiffReviews();
-    renderSpiffTable();
-    renderSpiffReview();
-    state._prevTotals = state._histLatestTotals || state._prevTotals;
-    state._prevMonthly = state._histLatestMonthly || state._prevMonthly;
-    renderDashboard();
+    let priorMods={};
+    try{ const {data}=await _sb.from('commission_snapshot').select('data').eq('year',state.year).maybeSingle(); priorMods=(data&&data.data&&data.data.fileMods)||{}; }catch(e){}
+    const _stale=Object.keys(curMods).filter(k=>priorMods[k]&&curMods[k]&&priorMods[k]===curMods[k]);
+    state._fileMods=curMods;
     await writeSnapshot();
     await writeValueHistory();
     await computeAndWriteDeltas(_priorGmRows);
+    return {missing, stale:_stale};
+  }catch(err){
+    throw err;
+  }
+}
+async function loadData(){
+  const btn=document.getElementById('refresh-btn'),icon=document.getElementById('refresh-icon');
+  btn.classList.add('loading');icon.className='spin';icon.textContent='↻';
+  const selectedYear=state.year;
+  const cy=new Date().getFullYear();
+  const years=[cy,cy-1].filter(y=>y!==selectedYear); years.push(selectedYear); // render selected year last
+  try{
+    let res={missing:[],stale:[]};
+    for(const yr of years){
+      state.year=yr;
+      setStatus('loading',`Loading ${yr} from Google Drive...`);
+      res=await loadYearData();
+    }
+    state.year=selectedYear;
+    await loadValueHistory();
+    await loadPriorDeals();
+    renderSpiffTable(); renderSpiffReview();
+    renderDashboard();
     const _LBL={svc:'Services',sw:'Software',staff:'Staffing',inv:'Invoices',pay:'Payments',gm:'GM pivot',stmt:'Statement'};
-    const _priorMods=state._fileMods||{};
-    const _stale=Object.keys(curMods).filter(k=>_priorMods[k]&&curMods[k]&&_priorMods[k]===curMods[k]);
-    state._fileMods=curMods;
-    const note=missing.length?` — missing: ${missing.join(', ')}`:' — all files loaded';
-    const staleNote=_stale.length?` — unchanged since last refresh: ${_stale.map(k=>_LBL[k]||k).join(', ')}`:'';
-    setStatus(_stale.length?'warn':'ok',`Live data from Drive${note}${staleNote}. Saved + refreshed ${new Date().toLocaleTimeString()}`);
+    const note=res.missing.length?` — missing: ${res.missing.join(', ')}`:' — all files loaded';
+    const staleNote=res.stale.length?` — unchanged since last refresh: ${res.stale.map(k=>_LBL[k]||k).join(', ')}`:'';
+    setStatus(res.stale.length?'warn':'ok',`Live data from Drive (both years)${note}${staleNote}. Saved + refreshed ${new Date().toLocaleTimeString()}`);
   }catch(err){
     setStatus('err','Drive error: '+err.message+'. Showing sample data.');
-    renderSample();
+    state.year=selectedYear; renderSample();
   }finally{
+    state.year=selectedYear;
     btn.classList.remove('loading');icon.className='';icon.textContent='↻';
   }
 }
