@@ -156,6 +156,8 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   </div>
   <div class="section-title" style="margin-top:1.25rem;">Recorded vs actual</div>
   <div class="tbl-wrap" id="paycheck-wrap"></div>
+  <div class="section-title" style="margin-top:1.25rem;">Expected check <span id="check-toggle" onclick="setCheckView()" style="text-transform:none;letter-spacing:0;font-weight:400;color:#5B94CB;cursor:pointer;margin-left:8px;"></span></div>
+  <div class="tbl-wrap" id="check-wrap"></div>
 </div>
 
 <!-- RECONCILIATION -->
@@ -310,6 +312,7 @@ async function _onSignedIn(){
   await loadAliasesFromSb();
   await loadPaychecksFromSb();
   await loadValueHistory();
+  await loadPriorDeals();
   await hydrateSnapshot(state.year);
 }
 
@@ -1480,6 +1483,62 @@ function renderDashboard(){
   renderAliasPanel();
 }
 
+// Measured pay-lag distribution (payment month minus earning month, weighted by $) from the statement.
+function _lagDist(){
+  const lagW={}; let lagTot=0;
+  (state.stmtRows||[]).forEach(r=>{
+    if(!(r.paidDate&&r.paidDate.trim()))return; const comm=r.busCommStmt||0; if(!comm)return;
+    const pam=paidAbsMonth(r.paidDate); if(pam==null)return;
+    const lag=pam-(state.year*12+r.monthIdx); if(lag<0||lag>12)return; lagW[lag]=(lagW[lag]||0)+comm; lagTot+=comm;
+  });
+  const d={}; if(lagTot>0){Object.keys(lagW).forEach(k=>d[k]=lagW[k]/lagTot);} else {d[3]=1;} return d;
+}
+// Prior-year deals from the stored snapshot, so the front of the check window projects correctly in January.
+async function loadPriorDeals(){
+  state._priorDeals=[];
+  if(!_sb||!_user)return;
+  try{ const {data}=await _sb.from('commission_snapshot').select('data').eq('year',state.year-1).maybeSingle();
+    if(data&&data.data&&Array.isArray(data.data.deals))state._priorDeals=data.data.deals; }catch(e){}
+}
+// Expected check: what lands in the paycheck by month across the year boundary. Past = actual (statement,
+// by pay month); future = projected (earnings shifted forward by the pay lag). Split Software / Consulting.
+function computeExpectedCheck(){
+  const cy=state.year;
+  const now=new Date(); const curAbs=now.getFullYear()*12+now.getMonth();
+  const paidDone=(abs)=> abs<curAbs || (abs===curAbs && now.getDate()>=15);
+  let winStart,winEnd;
+  if((state._checkView||'calendar')==='rolling'){ winStart=curAbs-3; winEnd=curAbs+9; }
+  else { winStart=cy*12; winEnd=(cy+1)*12+3; }
+  const proj={};
+  const addDeals=(deals,yr)=>{ (deals||[]).forEach(d=>{ if(!d.months)return; const denom=Object.values(d.months).reduce((a,g)=>a+(g||0),0); if(denom<=0)return; const isSw=(d.type==='software'); Object.entries(d.months).forEach(([m,gm])=>{ const abs=yr*12+parseInt(m); const comm=(d.projComm||0)*((gm||0)/denom); const b=proj[abs]||(proj[abs]={sw:0,cons:0}); if(isSw)b.sw+=comm; else b.cons+=comm; }); }); };
+  addDeals(state.deals,cy); addDeals(state._priorDeals,cy-1);
+  const typeOf={}; (state.deals||[]).forEach(d=>typeOf[d.name]=d.type);
+  const act={};
+  (state.stmtRows||[]).forEach(r=>{ if(!(r.paidDate&&r.paidDate.trim()))return; const pam=paidAbsMonth(r.paidDate); if(pam==null)return; const t=typeOf[resolveName(r.project)]; const amt=r.busCommStmt||0; const b=act[pam]||(act[pam]={sw:0,cons:0,uncl:0}); if(t==='software')b.sw+=amt; else if(t==='services'||t==='staffing')b.cons+=amt; else b.uncl+=amt; });
+  const lag=_lagDist();
+  const months=[],sw=[],cons=[],total=[];
+  for(let P=winStart;P<=winEnd;P++){
+    months.push(P);
+    if(paidDone(P)){ const a=act[P]||{sw:0,cons:0,uncl:0}; sw.push(a.sw); cons.push(a.cons); total.push(a.sw+a.cons+a.uncl); }
+    else { let s=0,c=0; Object.keys(lag).forEach(L=>{ const E=P-parseInt(L); const b=proj[E]; if(b){ s+=b.sw*lag[L]; c+=b.cons*lag[L]; } }); sw.push(s); cons.push(c); total.push(s+c); }
+  }
+  return {months,sw,cons,total,paidDone};
+}
+function renderExpectedCheck(){
+  const wrap=document.getElementById('check-wrap'); if(!wrap)return;
+  const view=state._checkView||'calendar';
+  const tg=document.getElementById('check-toggle'); if(tg)tg.textContent=view==='calendar'?'(calendar — switch to rolling)':'(rolling — switch to calendar)';
+  const ec=computeExpectedCheck();
+  const hdr=ec.months.map(abs=>{ const y=Math.floor(abs/12),mo=abs%12; return `<th>${MONTHS[mo]} '${String(y).slice(-2)}</th>`; }).join('');
+  const cell=(v,abs)=>{ const future=!ec.paidDone(abs); return `<td${future?' style="color:#5B94CB"':''}>${v?fmt(v):'—'}</td>`; };
+  const row=(label,arr)=>`<tr><td class="left">${label}</td>${arr.map((v,i)=>cell(v,ec.months[i])).join('')}<td>${fmt(arr.reduce((a,b)=>a+b,0))}</td></tr>`;
+  wrap.innerHTML=`<div style="font-size:11px;color:#666;margin:4px 4px 8px;">What lands in your check by month. Past months (through the 15th) are actual from the statement; future months (blue) are projected — earnings shifted forward by the measured pay lag. It crosses the year boundary: current-year Q4 shows up as next year's early checks, and the year-start checks are prior-year work being paid.</div>`
+    +`<table><thead><tr><th class="left">Type</th>${hdr}<th>Total</th></tr></thead><tbody>`
+    +row('Software',ec.sw)+row('Consulting',ec.cons)
+    +`<tr class="subtotal"><td class="left">Expected check</td>${ec.total.map((v,i)=>cell(v,ec.months[i])).join('')}<td>${fmt(ec.total.reduce((a,b)=>a+b,0))}</td></tr>`
+    +`</tbody></table>`;
+}
+function setCheckView(){ state._checkView=(state._checkView||'calendar')==='calendar'?'rolling':'calendar'; renderExpectedCheck(); }
 function computeMonthlySeries(){
   const mGm=Array(12).fill(0),mProj=Array(12).fill(0);
   state.deals.forEach(d=>{
@@ -1487,13 +1546,7 @@ function computeMonthlySeries(){
     const denom=Object.values(d.months).reduce((a,g)=>a+(g||0),0);
     Object.entries(d.months).forEach(([m,gm])=>{const mi=parseInt(m);mGm[mi]+=gm;if(denom>0)mProj[mi]+=(d.projComm||0)*((gm||0)/denom);});
   });
-  const lagW={}; let lagTot=0;
-  state.stmtRows.forEach(r=>{
-    if(!(r.paidDate&&r.paidDate.trim()))return; const comm=r.busCommStmt||0; if(!comm)return;
-    const pam=paidAbsMonth(r.paidDate); if(pam==null)return;
-    const lag=pam-(state.year*12+r.monthIdx); if(lag<0||lag>12)return; lagW[lag]=(lagW[lag]||0)+comm; lagTot+=comm;
-  });
-  const lagDist={}; if(lagTot>0){Object.keys(lagW).forEach(k=>lagDist[k]=lagW[k]/lagTot);} else {lagDist[3]=1;}
+  const lagDist=_lagDist();
   const mProjPay=Array(12).fill(0);
   for(let m=0;m<12;m++){ if(!mProj[m])continue; Object.keys(lagDist).forEach(L=>{const pm=m+parseInt(L); if(pm>=0&&pm<12)mProjPay[pm]+=mProj[m]*lagDist[L];}); }
   return {gm:mGm,proj:mProj,pay:mProjPay};
@@ -1533,6 +1586,7 @@ function renderMonthly(){
       <tr class="subtotal"><td class="left">Δ (statement − proj)</td>${mStmt.map((v,i)=>`<td>${v>0?fmtD(v-mProj[i]):'—'}</td>`).join('')}<td>${fmtD(dStmt-dSProj)}</td></tr>
     </tbody></table>`;
   renderPaycheckRecon();
+  renderExpectedCheck();
 }
 
 function renderRecon(){
