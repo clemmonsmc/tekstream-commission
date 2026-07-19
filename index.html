@@ -374,8 +374,10 @@ function recomputeDealAggregates(){
     d.invoicedRev=(state.invoiceRows||[]).filter(r=>resolveName(r.proj)===d.name).reduce((a,r)=>a+r.total,0);
     d.paidRev=(state.paymentRows||[]).filter(r=>resolveName(r.proj)===d.name).reduce((a,r)=>a+r.total,0);
     const actGmTotal=(state.gmRows||[]).filter(r=>resolveName(r.proj)===d.name).reduce((a,r)=>a+r.gm,0)*d.gmMult;
+    d.invoicedGm=actGmTotal;
     d.invoicedComm=actGmTotal>0?calcComm(actGmTotal,d.type):(d.invoicedRev?calcComm(d.invoicedRev*0.4*d.gmMult,d.type):0);
     d.paidComm=(d.invoicedComm&&d.invoicedRev)?d.invoicedComm*(d.paidRev/(d.invoicedRev||1)):0;
+    d.paidGm=(d.invoicedGm&&d.invoicedRev)?d.invoicedGm*(d.paidRev/(d.invoicedRev||1)):0;
   });
 }
 async function loadAliasesFromSb(){
@@ -1415,11 +1417,14 @@ function processCSVs(csv){
       const mi=dateStr?new Date(dateStr).getMonth():-1;
       const projGm=parseFloat(row['Projected Margin ($)']||0)||0;
       const actGm=parseFloat(row['Project Net Gross Margin (Revrec)']||0)||0;
+      const projRev=parseFloat(row['Projected Revenue ($)']||0)||0;
       const gm=(actGm||projGm)*byProj[proj].gmMult;
       if(mi>=0)byProj[proj].months[mi]=(byProj[proj].months[mi]||0)+gm;
+      byProj[proj].projRev=(byProj[proj].projRev||0)+projRev*byProj[proj].gmMult;
     });
     Object.values(byProj).forEach(d=>{
       d.projGm=Object.values(d.months).reduce((a,b)=>a+b,0);
+      d.projRev=d.projRev||0;
       d.projComm=0;
       allDeals.push(d);
     });
@@ -1592,22 +1597,27 @@ const _METRIC_LBL={proj:'Projected value',stmt:'Statement',inv:'Billed',paid:'Co
 function setChartMetric(m){ state._chartMetric=m; renderCharts(); }
 function renderPipeline(){
   const el=document.getElementById('pipeline'); if(!el)return;
-  const proj=state.deals.reduce((a,d)=>a+(d.projComm||0),0);
-  const inv=state.deals.reduce((a,d)=>a+(d.invoicedComm||0),0);
-  const paid=state.deals.reduce((a,d)=>a+(d.paidComm||0),0);
-  const recv=state.stmtRows.filter(r=>r.paidDate&&r.paidDate.trim()).reduce((a,r)=>a+(r.busCommStmt||0),0);
-  const stages=[
-    {name:'Projected',val:proj},
-    {name:'Invoiced',val:inv,gap:'not yet invoiced'},
-    {name:'Customer paid',val:paid,gap:'not yet collected'},
-    {name:'AE received',val:recv,gap:'not yet received'}
+  const d=state.deals||[];
+  const sum=f=>d.reduce((a,x)=>a+(f(x)||0),0);
+  const recv=(state.stmtRows||[]).filter(r=>r.paidDate&&r.paidDate.trim()).reduce((a,r)=>a+(r.busCommStmt||0),0);
+  const rows=[
+    {name:'Projected',    rev:sum(x=>x.projRev),     gm:sum(x=>x.projGm),     comm:sum(x=>x.projComm)},
+    {name:'Invoiced',     rev:sum(x=>x.invoicedRev), gm:sum(x=>x.invoicedGm), comm:sum(x=>x.invoicedComm), gap:'not yet invoiced'},
+    {name:'Customer paid',rev:sum(x=>x.paidRev),     gm:sum(x=>x.paidGm),     comm:sum(x=>x.paidComm),     gap:'not yet collected'},
+    {name:'AE received',  rev:null,                  gm:null,                 comm:recv,                   gap:'not yet received'}
   ];
-  const base=proj||1;
-  el.innerHTML=stages.map((s,i)=>{
-    const pct=Math.max(0,Math.min(100,Math.round(s.val/base*100)));
-    const gapRow=i>0?`<div style="font-size:10px;color:#A32D2D;margin:1px 0 5px 4px;">↓ ${fmtD(s.val-stages[i-1].val)} ${s.gap}</div>`:'';
-    return gapRow+`<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span style="font-weight:600;color:#003658;">${s.name}</span><span>${fmt(s.val)} <span style="color:#999;">(${pct}%)</span></span></div><div class="progress-wrap"><div class="progress-bar" style="width:${pct}%;background:#5B94CB;"></div></div>`;
-  }).join('');
+  const pct=(gm,rev)=>(rev&&rev>0)?(gm/rev*100).toFixed(1)+'%':'—';
+  let html='<table><thead><tr><th class="left">Stage</th><th>Revenue</th><th>GM</th><th>GM%</th><th>Commission</th></tr></thead><tbody>';
+  rows.forEach((r,i)=>{
+    if(i>0){
+      const p=rows[i-1];
+      const revGap=(r.rev!=null&&p.rev!=null)?fmtD(r.rev-p.rev)+' rev · ':'';
+      html+=`<tr><td class="left" colspan="5" style="font-size:10px;color:#A32D2D;padding:2px 8px;">↓ ${revGap}${fmtD(r.comm-p.comm)} comm ${r.gap}</td></tr>`;
+    }
+    html+=`<tr><td class="left" style="font-weight:600;">${r.name}</td><td>${r.rev!=null?fmt(r.rev):'—'}</td><td>${r.gm!=null?fmt(r.gm):'—'}</td><td>${r.rev!=null?pct(r.gm,r.rev):'—'}</td><td>${fmt(r.comm)}</td></tr>`;
+  });
+  html+='</tbody></table>';
+  el.innerHTML=html;
 }
 function renderCharts(){
   const wrap=document.getElementById('chart-strip'); if(!wrap)return;
