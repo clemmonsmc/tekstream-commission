@@ -164,6 +164,8 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   </div>
   <div class="section-title" style="margin-top:1.25rem;">Expected check <span id="check-toggle" onclick="setCheckView()" style="text-transform:none;letter-spacing:0;font-weight:400;color:#5B94CB;cursor:pointer;margin-left:8px;"></span></div>
   <div class="tbl-wrap" id="check-wrap"></div>
+  <div class="section-title" style="margin-top:1.25rem;">By type — monthly <span id="typemetric-toggle" style="text-transform:none;letter-spacing:0;font-weight:400;font-size:11px;margin-left:8px;"></span></div>
+  <div class="tbl-wrap" id="typemonthly-wrap"></div>
 </div>
 
 <!-- RECONCILIATION -->
@@ -1412,19 +1414,18 @@ function processCSVs(csv){
     const byProj={};
     rows.forEach(row=>{
       const proj=row['Project']||row['project']||'';if(!proj||proj==='No project assigned')return;
-      if(!byProj[proj])byProj[proj]={name:proj,type,months:{},spiff:isSpiff(proj),gmMult:gmMult(proj)};
+      if(!byProj[proj])byProj[proj]={name:proj,type,months:{},revMonths:{},spiff:isSpiff(proj),gmMult:gmMult(proj)};
       const dateStr=row['Date']||row['date']||'';
       const mi=dateStr?new Date(dateStr).getMonth():-1;
       const projGm=parseFloat(row['Projected Margin ($)']||0)||0;
       const actGm=parseFloat(row['Project Net Gross Margin (Revrec)']||0)||0;
       const projRev=parseFloat(row['Projected Revenue ($)']||0)||0;
       const gm=(actGm||projGm)*byProj[proj].gmMult;
-      if(mi>=0)byProj[proj].months[mi]=(byProj[proj].months[mi]||0)+gm;
-      byProj[proj].projRev=(byProj[proj].projRev||0)+projRev*byProj[proj].gmMult;
+      if(mi>=0){byProj[proj].months[mi]=(byProj[proj].months[mi]||0)+gm; byProj[proj].revMonths[mi]=(byProj[proj].revMonths[mi]||0)+projRev*byProj[proj].gmMult;}
     });
     Object.values(byProj).forEach(d=>{
       d.projGm=Object.values(d.months).reduce((a,b)=>a+b,0);
-      d.projRev=d.projRev||0;
+      d.projRev=Object.values(d.revMonths).reduce((a,b)=>a+b,0);
       d.projComm=0;
       allDeals.push(d);
     });
@@ -1595,6 +1596,34 @@ function _chartBars(vals,labels,title){
 }
 const _METRIC_LBL={proj:'Projected value',stmt:'Statement',inv:'Billed',paid:'Collected'};
 function setChartMetric(m){ state._chartMetric=m; renderCharts(); }
+function setTypeMetric(m){ state._typeMetric=m; renderTypeMonthly(); }
+function renderTypeMonthly(){
+  const el=document.getElementById('typemonthly-wrap'); if(!el)return;
+  const metric=state._typeMetric||'gm';
+  const deals=state.deals||[];
+  const tg=document.getElementById('typemetric-toggle');
+  if(tg){ const opt=(m,l)=>`<a onclick="setTypeMetric('${m}')" style="cursor:pointer;${m===metric?'font-weight:700;color:#003658;':'color:#5B94CB;'}">${l}</a>`; tg.innerHTML=opt('gm','GM')+' · '+opt('rev','Revenue')+' · '+opt('comm','Commission'); }
+  const rowFor=type=>{
+    const td=deals.filter(d=>d.type===type);
+    const mo=Array(12).fill(0); let gmTot=0,revTot=0;
+    td.forEach(d=>{
+      const denom=Object.values(d.months||{}).reduce((a,b)=>a+(b||0),0);
+      for(let m=0;m<12;m++){
+        const g=(d.months&&d.months[m])||0, r=(d.revMonths&&d.revMonths[m])||0;
+        if(metric==='gm')mo[m]+=g; else if(metric==='rev')mo[m]+=r; else mo[m]+=denom>0?(d.projComm||0)*(g/denom):0;
+      }
+      gmTot+=(d.projGm||0); revTot+=(d.projRev||0);
+    });
+    return {mo,tot:mo.reduce((a,b)=>a+b,0),eff:revTot>0?(gmTot/revTot*100).toFixed(1)+'%':'—'};
+  };
+  let html='<table><thead><tr><th class="left">Type</th>'+MONTHS.map(m=>`<th>${m}</th>`).join('')+'<th>Total</th><th>Eff rate</th></tr></thead><tbody>';
+  [['services','Services'],['staffing','Staffing'],['software','Software']].forEach(([t,label])=>{
+    const r=rowFor(t);
+    html+=`<tr><td class="left" style="font-weight:600;">${label}</td>`+r.mo.map(v=>`<td>${v?fmt(v):'—'}</td>`).join('')+`<td>${fmt(r.tot)}</td><td>${r.eff}</td></tr>`;
+  });
+  html+='</tbody></table>';
+  el.innerHTML=html;
+}
 function renderPipeline(){
   const el=document.getElementById('pipeline'); if(!el)return;
   const d=state.deals||[];
@@ -1681,6 +1710,7 @@ function renderMonthly(){
     </tbody></table>`;
   renderPaycheckRecon();
   renderExpectedCheck();
+  renderTypeMonthly();
 }
 
 function renderRecon(){
