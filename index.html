@@ -1561,24 +1561,30 @@ function renderExpectedCheck(){
 }
 function setCheckView(){ state._checkView=(state._checkView||'calendar')==='calendar'?'rolling':'calendar'; renderExpectedCheck(); }
 // ---- Charts (hand-drawn SVG, no dependency) ----
-function _chartLine(vals,labels,title,lastLabel){
-  const W=340,H=180,padL=8,padR=8,padT=26,padB=22,iw=W-padL-padR,ih=H-padT-padB;
-  const max=Math.max(...vals,1),min=Math.min(...vals,0),rng=(max-min)||1;
+function _chartLine(vals,labels,title,opts){
+  opts=opts||{};
+  const W=340,H=180,padL=42,padR=10,padT=26,padB=22,iw=W-padL-padR,ih=H-padT-padB;
+  const dmax=Math.max(...vals,1),dmin=opts.zeroBased?0:Math.min(...vals);
+  const max=dmax,min=Math.min(dmin,dmax),rng=(max-min)||1;
   const x=i=>padL+(vals.length<=1?iw/2:iw*i/(vals.length-1));
   const y=v=>padT+ih-((v-min)/rng)*ih;
+  const ticks=opts.zeroBased?[0,max/3,2*max/3,max]:[min,(min+max)/2,max];
+  const grid=ticks.map(t=>`<line x1="${padL}" y1="${y(t)}" x2="${W-padR}" y2="${y(t)}" stroke="#eef2f6" stroke-width="1"/><text x="${padL-4}" y="${y(t)+3}" font-size="8" fill="#aaa" text-anchor="end">${fmt(t)}</text>`).join('');
   const pts=vals.map((v,i)=>x(i)+','+y(v)).join(' ');
-  const area=padL+','+(padT+ih)+' '+pts+' '+x(vals.length-1)+','+(padT+ih);
+  const area=padL+','+y(min)+' '+pts+' '+x(vals.length-1)+','+y(min);
   const step=labels.length>10?2:1;
   const lbls=labels.map((l,i)=>(i%step===0)?`<text x="${x(i)}" y="${H-6}" font-size="8" fill="#999" text-anchor="middle">${l}</text>`:'').join('');
   const dots=vals.length<=13?vals.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="2" fill="#5B94CB"/>`).join(''):'';
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;"><text x="${padL}" y="14" font-size="11" font-weight="600" fill="#003658">${title}</text><polygon points="${area}" fill="#5B94CB" opacity="0.10"/><polyline points="${pts}" fill="none" stroke="#5B94CB" stroke-width="1.5"/>${dots}${lbls}<text x="${W-padR}" y="14" font-size="9" fill="#999" text-anchor="end">${lastLabel||fmt(vals[vals.length-1]||0)}</text></svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;"><text x="4" y="14" font-size="11" font-weight="600" fill="#003658">${title}</text>${grid}<polygon points="${area}" fill="#5B94CB" opacity="0.10"/><polyline points="${pts}" fill="none" stroke="#5B94CB" stroke-width="1.5"/>${dots}${lbls}<text x="${W-padR}" y="14" font-size="9" fill="#999" text-anchor="end">${opts.lastLabel||fmt(vals[vals.length-1]||0)}</text></svg>`;
 }
 function _chartBars(vals,labels,title){
-  const W=340,H=180,padL=8,padR=8,padT=26,padB=22,iw=W-padL-padR,ih=H-padT-padB;
+  const W=340,H=180,padL=42,padR=10,padT=26,padB=22,iw=W-padL-padR,ih=H-padT-padB;
   const max=Math.max(...vals,1),gap=iw/vals.length,bw=gap*0.7;
+  const y=v=>padT+ih-(v/max)*ih;
+  const grid=[0,max/3,2*max/3,max].map(t=>`<line x1="${padL}" y1="${y(t)}" x2="${W-padR}" y2="${y(t)}" stroke="#eef2f6" stroke-width="1"/><text x="${padL-4}" y="${y(t)+3}" font-size="8" fill="#aaa" text-anchor="end">${fmt(t)}</text>`).join('');
   const bars=vals.map((v,i)=>{const h=Math.max((v/max)*ih,0);return `<rect x="${padL+i*gap+(gap-bw)/2}" y="${padT+ih-h}" width="${bw}" height="${h}" fill="#5B94CB" rx="1"/>`;}).join('');
   const lbls=labels.map((l,i)=>`<text x="${padL+i*gap+gap/2}" y="${H-6}" font-size="8" fill="#999" text-anchor="middle">${l}</text>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;"><text x="${padL}" y="14" font-size="11" font-weight="600" fill="#003658">${title}</text>${bars}${lbls}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;"><text x="4" y="14" font-size="11" font-weight="600" fill="#003658">${title}</text>${grid}${bars}${lbls}</svg>`;
 }
 const _METRIC_LBL={proj:'Projected value',stmt:'Statement',inv:'Billed',paid:'Collected'};
 function setChartMetric(m){ state._chartMetric=m; renderCharts(); }
@@ -1586,12 +1592,12 @@ function renderCharts(){
   const wrap=document.getElementById('chart-strip'); if(!wrap)return;
   const proj=computeMonthlySeries().proj;
   let cum=0; const cumArr=proj.map(v=>(cum+=v));
-  const c1=_chartLine(cumArr,MONTHS,'Cumulative projected value');
+  const c1=_chartLine(cumArr,MONTHS,'Cumulative projected value',{zeroBased:true});
   const c2=_chartBars(proj,MONTHS,'Monthly projected value');
   const metric=state._chartMetric||'proj';
   const ser=(state._histSeries||[]).map(r=>(r.totals&&r.totals[metric]!=null)?r.totals[metric]:0);
   let c3;
-  if(ser.length>=2){ c3=_chartLine(ser,ser.map((_,i)=>String(i+1)),_METRIC_LBL[metric]+' over refreshes'); }
+  if(ser.length>=2){ c3=_chartLine(ser,ser.map((_,i)=>String(i+1)),_METRIC_LBL[metric]+' over refreshes',{zeroBased:false}); }
   else { c3=`<svg viewBox="0 0 340 180" style="width:100%;height:auto;"><text x="8" y="14" font-size="11" font-weight="600" fill="#003658">${_METRIC_LBL[metric]} over refreshes</text><text x="170" y="95" font-size="10" fill="#999" text-anchor="middle">Collecting — needs 2+ refreshes</text></svg>`; }
   const sel=`<select onchange="setChartMetric(this.value)" style="font-size:10px;border:1px solid #d0d8e0;border-radius:4px;">${['proj','stmt','inv','paid'].map(m=>`<option value="${m}"${m===metric?' selected':''}>${_METRIC_LBL[m]}</option>`).join('')}</select>`;
   wrap.innerHTML=`<div class="chart-grid"><div class="chart-cell">${c1}</div><div class="chart-cell">${c2}</div><div class="chart-cell"><div style="text-align:right;margin-bottom:2px;">${sel}</div>${c3}</div></div>`;
