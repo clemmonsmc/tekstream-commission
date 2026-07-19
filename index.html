@@ -33,7 +33,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #f8f8f6; c
 .tab.active { background: #f8f8f6; color: #111; border-color: #e0e0d8; border-bottom-color: #f8f8f6; }
 
 .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin-bottom: 1.25rem; }
-.chart-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-bottom: 1.25rem; }
+.chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-bottom: 1.25rem; }
 .chart-cell { background: #fff; border-radius: 8px; padding: 8px 10px; border: 1px solid #e8e8e0; }
 .metric-card { background: #fff; border-radius: 8px; padding: 14px 16px; border: 1px solid #e8e8e0; }
 .metric-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
@@ -162,8 +162,6 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   <div class="tbl-wrap" id="monthly-wrap">
     <div style="padding:1rem;font-size:11px;color:#999;">Load data to see monthly breakdown</div>
   </div>
-  <div class="section-title" style="margin-top:1.25rem;">Recorded vs actual</div>
-  <div class="tbl-wrap" id="paycheck-wrap"></div>
   <div class="section-title" style="margin-top:1.25rem;">Expected check <span id="check-toggle" onclick="setCheckView()" style="text-transform:none;letter-spacing:0;font-weight:400;color:#5B94CB;cursor:pointer;margin-left:8px;"></span></div>
   <div class="tbl-wrap" id="check-wrap"></div>
 </div>
@@ -320,7 +318,6 @@ async function _onSignedIn(){
   await loadAliasesFromSb();
   await loadPaychecksFromSb();
   await loadValueHistory();
-  await loadChartHistory();
   await loadPriorDeals();
   await hydrateSnapshot(state.year);
 }
@@ -1368,8 +1365,7 @@ async function loadData(){
     }
     state.year=selectedYear;
     await loadValueHistory();
-    await loadChartHistory();
-    await loadPriorDeals();
+      await loadPriorDeals();
     renderSpiffTable(); renderSpiffReview();
     renderDashboard();
     const _LBL={svc:'Services',sw:'Software',staff:'Staffing',inv:'Invoices',pay:'Payments',gm:'GM pivot',stmt:'Statement'};
@@ -1619,13 +1615,7 @@ function renderCharts(){
   let cum=0; const cumArr=proj.map(v=>(cum+=v));
   const c1=_chartLine(cumArr,MONTHS,'Cumulative projected value',{zeroBased:true});
   const c2=_chartBars(proj,MONTHS,'Monthly projected value');
-  const metric=state._chartMetric||'proj';
-  const ser=(state._histSeries||[]).map(r=>(r.totals&&r.totals[metric]!=null)?r.totals[metric]:0);
-  let c3;
-  if(ser.length>=2){ c3=_chartLine(ser,ser.map((_,i)=>String(i+1)),_METRIC_LBL[metric]+' over refreshes',{zeroBased:false}); }
-  else { c3=`<svg viewBox="0 0 340 180" style="width:100%;height:auto;"><text x="8" y="14" font-size="11" font-weight="600" fill="#003658">${_METRIC_LBL[metric]} over refreshes</text><text x="170" y="95" font-size="10" fill="#999" text-anchor="middle">Collecting — needs 2+ refreshes</text></svg>`; }
-  const sel=`<select onchange="setChartMetric(this.value)" style="font-size:10px;border:1px solid #d0d8e0;border-radius:4px;">${['proj','stmt','inv','paid'].map(m=>`<option value="${m}"${m===metric?' selected':''}>${_METRIC_LBL[m]}</option>`).join('')}</select>`;
-  wrap.innerHTML=`<div class="chart-grid"><div class="chart-cell">${c1}</div><div class="chart-cell">${c2}</div><div class="chart-cell"><div style="text-align:right;margin-bottom:2px;">${sel}</div>${c3}</div></div>`;
+  wrap.innerHTML=`<div class="chart-grid"><div class="chart-cell">${c1}</div><div class="chart-cell">${c2}</div></div>`;
 }
 async function loadChartHistory(){
   state._histSeries=[];
