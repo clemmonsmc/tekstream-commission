@@ -1639,12 +1639,12 @@ function renderMovers(){
     const p=prev[d.name];
     const commD=(d.projComm||0)-((p&&p.projComm)||0);
     const gmD=(d.projGm||0)-((p&&p.projGm)||0);
-    if(Math.abs(commD)>=250||Math.abs(gmD)>=2500) rows.push({name:d.name,commD,gmD,tag:p?'':'new'});
+    if(Math.abs(commD)>=1000||Math.abs(gmD)>=5000) rows.push({name:d.name,commD,gmD,tag:p?'':'new'});
   });
   Object.keys(prev).forEach(name=>{
     if(seen[name])return;
     const p=prev[name]; const commD=-((p&&p.projComm)||0), gmD=-((p&&p.projGm)||0);
-    if(Math.abs(commD)>=250||Math.abs(gmD)>=2500) rows.push({name,commD,gmD,tag:'gone'});
+    if(Math.abs(commD)>=1000||Math.abs(gmD)>=5000) rows.push({name,commD,gmD,tag:'gone'});
   });
   rows.sort((a,b)=>Math.abs(b.commD)-Math.abs(a.commD));
   if(!prev||!Object.keys(prev).length){ el.innerHTML='<div style="font-size:11px;color:#999;">Refresh again to compare against the last pull.</div>'; return; }
