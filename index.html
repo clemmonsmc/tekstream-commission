@@ -1551,13 +1551,14 @@ function computeExpectedCheck(){
   const act={};
   (state.stmtRows||[]).forEach(r=>{ if(!(r.paidDate&&r.paidDate.trim()))return; const pam=paidAbsMonth(r.paidDate); if(pam==null)return; const t=typeOf[resolveName(r.project)]; const amt=r.busCommStmt||0; const b=act[pam]||(act[pam]={sw:0,cons:0,uncl:0}); if(t==='software')b.sw+=amt; else if(t==='services'||t==='staffing')b.cons+=amt; else b.uncl+=amt; });
   const lag=_lagDist();
-  const months=[],sw=[],cons=[],total=[];
+  const months=[],sw=[],cons=[],other=[],total=[];
   for(let P=winStart;P<=winEnd;P++){
     months.push(P);
-    if(paidDone(P)){ const a=act[P]||{sw:0,cons:0,uncl:0}; sw.push(a.sw); cons.push(a.cons); total.push(a.sw+a.cons+a.uncl); }
-    else { let s=0,c=0; Object.keys(lag).forEach(L=>{ const E=P-parseInt(L); const b=proj[E]; if(b){ s+=b.sw*lag[L]; c+=b.cons*lag[L]; } }); sw.push(s); cons.push(c); total.push(s+c); }
+    if(paidDone(P)){ const a=act[P]||{sw:0,cons:0,uncl:0}; sw.push(a.sw); cons.push(a.cons); other.push(a.uncl); total.push(a.sw+a.cons+a.uncl); }
+    // Future months project only from deals, so nothing lands in Other (true-ups aren't forecast).
+    else { let s=0,c=0; Object.keys(lag).forEach(L=>{ const E=P-parseInt(L); const b=proj[E]; if(b){ s+=b.sw*lag[L]; c+=b.cons*lag[L]; } }); sw.push(s); cons.push(c); other.push(0); total.push(s+c); }
   }
-  return {months,sw,cons,total,paidDone};
+  return {months,sw,cons,other,total,paidDone};
 }
 function renderExpectedCheck(){
   const wrap=document.getElementById('check-wrap'); if(!wrap)return;
@@ -1567,9 +1568,10 @@ function renderExpectedCheck(){
   const hdr=ec.months.map(abs=>{ const y=Math.floor(abs/12),mo=abs%12; return `<th>${MONTHS[mo]} '${String(y).slice(-2)}</th>`; }).join('');
   const cell=(v,abs)=>{ const future=!ec.paidDone(abs); return `<td${future?' style="color:#5B94CB"':''}>${v?fmt(v):'—'}</td>`; };
   const row=(label,arr)=>`<tr><td class="left">${label}</td>${arr.map((v,i)=>cell(v,ec.months[i])).join('')}<td>${fmt(arr.reduce((a,b)=>a+b,0))}</td></tr>`;
-  wrap.innerHTML=`<div style="font-size:11px;color:#666;margin:4px 4px 8px;">What lands in your check by month. Past months (through the 15th) are actual from the statement; future months (blue) are projected — earnings shifted forward by the measured pay lag. It crosses the year boundary: current-year Q4 shows up as next year's early checks, and the year-start checks are prior-year work being paid.</div>`
+  wrap.innerHTML=`<div style="font-size:11px;color:#666;margin:4px 4px 8px;">What lands in your check by month. Past months (through the 15th) are actual from the statement; future months (blue) are projected — earnings shifted forward by the measured pay lag. It crosses the year boundary: current-year Q4 shows up as next year's early checks, and the year-start checks are prior-year work being paid. Other is paid commission not tied to one of your deals (true-ups and the like), so the rows always sum to the check.</div>`
     +`<table><thead><tr><th class="left">Type</th>${hdr}<th>Total</th></tr></thead><tbody>`
     +row('Software',ec.sw)+row('Consulting',ec.cons)
+    +(ec.other.some(function(v){return Math.abs(v)>0.005;})?row('Other',ec.other):'')
     +`<tr class="subtotal"><td class="left">Expected check</td>${ec.total.map((v,i)=>cell(v,ec.months[i])).join('')}<td>${fmt(ec.total.reduce((a,b)=>a+b,0))}</td></tr>`
     +`</tbody></table>`;
 }
