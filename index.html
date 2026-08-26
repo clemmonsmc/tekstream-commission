@@ -100,8 +100,11 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 <div id="authGate" style="position:fixed;inset:0;background:#f8f8f6;display:flex;align-items:center;justify-content:center;z-index:9999;">
   <div style="background:#fff;border:1px solid #e0e0d8;border-radius:10px;padding:32px 36px;max-width:360px;text-align:center;">
     <div style="font-size:16px;font-weight:600;color:#003658;margin-bottom:6px;">Pipeline Console</div>
-    <div style="font-size:12px;color:#888;margin-bottom:20px;">Sign in with your TekStream Google account.</div>
+    <div style="font-size:12px;color:#888;margin-bottom:20px;">Sign in with your TekStream account.</div>
     <button id="gate-signin" onclick="_signIn()" style="padding:9px 18px;border:none;border-radius:7px;background:#003658;color:#fff;font-size:13px;cursor:pointer;">Sign in with Google</button>
+    <div style="display:flex;align-items:center;gap:8px;margin:18px 0 12px;color:#bbb;font-size:10px;"><div style="flex:1;height:1px;background:#e8e8e0;"></div>OR<div style="flex:1;height:1px;background:#e8e8e0;"></div></div>
+    <input id="gate-email" type="email" autocomplete="email" placeholder="you@tekstream.com" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d0d8e0;border-radius:7px;font-size:13px;margin-bottom:8px;" onkeydown="if(event.key==='Enter')_signInEmail()">
+    <button id="gate-link" onclick="_signInEmail()" style="padding:8px 18px;border:1px solid #003658;border-radius:7px;background:#fff;color:#003658;font-size:13px;cursor:pointer;width:100%;">Email me a sign-in link</button>
     <div id="gate-msg" style="font-size:11px;color:#A32D2D;margin-top:14px;min-height:14px;"></div>
   </div>
 </div>
@@ -283,6 +286,29 @@ async function _sbInit(){
 async function _signIn(){
   if(!_sb){_gateMsg('Not ready yet, try again.');return;}
   await _sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}});
+}
+// Magic-link sign-in. Bypasses Google entirely, so an Entra block on the federated
+// Google app does not lock you out. shouldCreateUser:false means the link only works
+// for an account that already exists, so this cannot silently create a fresh empty user.
+async function _signInEmail(){
+  if(!_sb){_gateMsg('Not ready yet, try again.');return;}
+  const el=document.getElementById('gate-email');
+  const email=((el&&el.value)||'').trim().toLowerCase();
+  if(!email){_gateMsg('Enter your email address.');return;}
+  if(!email.endsWith(TS_DOMAIN)){_gateMsg('Use a '+TS_DOMAIN+' address.');return;}
+  const btn=document.getElementById('gate-link');
+  if(btn){btn.disabled=true;btn.textContent='Sending\u2026';}
+  try{
+    const {error}=await _sb.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin,shouldCreateUser:false}});
+    if(error)throw error;
+    const m=document.getElementById('gate-msg');
+    if(m){m.style.color='#2F855A';m.textContent='Check your email for the sign-in link. It can take a minute.';}
+    if(btn)btn.textContent='Link sent';
+  }catch(e){
+    const m=document.getElementById('gate-msg'); if(m)m.style.color='#A32D2D';
+    _gateMsg(e.message||'Could not send the link.');
+    if(btn){btn.disabled=false;btn.textContent='Email me a sign-in link';}
+  }
 }
 async function _signOut(){ if(_sb){await _sb.auth.signOut();} }
 function _applySession(session){
