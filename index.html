@@ -279,6 +279,14 @@ let _sb=null, _user=null, _lastRefreshed=null, _loaded=false, _lastCsv=null;
 const TS_DOMAIN='@tekstream.com';
 
 function _gateMsg(m){const el=document.getElementById('gate-msg');if(el)el.textContent=m||'';}
+// Every /api/proxy call must carry the Supabase access token. getSession() reads the
+// cached session and refreshes it when expired, so this cannot go stale mid-session.
+async function _proxyHeaders(){
+  const h={'Content-Type':'application/json'};
+  if(_sb){ const {data}=await _sb.auth.getSession();
+    if(data&&data.session) h.Authorization='Bearer '+data.session.access_token; }
+  return h;
+}
 async function _sbInit(){
   try{
     const cfg=await (await fetch('/api/config')).json();
@@ -1279,17 +1287,17 @@ async function saveSpiffsToDrive(){
   const fid=document.getElementById('cfg-folder').value.trim();
   const fname=document.getElementById('cfg-spiff').value.trim();
   try{
-    const sr=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',folderId:fid,fileName:fname,content:json})});const sd=await sr.json();if(sd.error)throw new Error(sd.error);
+    const sr=await fetch('/api/proxy',{method:'POST',headers:await _proxyHeaders(),body:JSON.stringify({action:'save',folderId:fid,fileName:fname,content:json})});const sd=await sr.json();if(sd.error)throw new Error(sd.error);
     document.getElementById('spiff-status').textContent='Saved to Drive successfully.';
   }catch(e){document.getElementById('spiff-status').textContent='Drive save failed: '+e.message;saveSpiffsLocal();}
 }
 
 async function driveList(folderId){
-  const r=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list',folderId})});
+  const r=await fetch('/api/proxy',{method:'POST',headers:await _proxyHeaders(),body:JSON.stringify({action:'list',folderId})});
   const d=await r.json();if(d.error)throw new Error(JSON.stringify(d.error));return d.files||[];
 }
 async function driveGet(fileId){
-  const r=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',fileId})});
+  const r=await fetch('/api/proxy',{method:'POST',headers:await _proxyHeaders(),body:JSON.stringify({action:'get',fileId})});
   const d=await r.json();if(d.error)throw new Error(JSON.stringify(d.error));return d.content||'';
 }
 
@@ -1367,7 +1375,7 @@ async function loadYearData(){
       const yr=state.year;
       for(const sheetName of [String(yr),String(yr)+' Licenses']){
         try{
-          const sr=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'getSheetCSV',fileId:stmtFile.id,sheetName})});
+          const sr=await fetch('/api/proxy',{method:'POST',headers:await _proxyHeaders(),body:JSON.stringify({action:'getSheetCSV',fileId:stmtFile.id,sheetName})});
           const sd=await sr.json();
           if(sd.error)throw new Error(sd.error);
           parseCSV(sd.csv||'').forEach(row=>{
@@ -1400,7 +1408,7 @@ async function loadYearData(){
                      {sheet:String(yr)+'Licenses',dirCol:'Project - Business Dev Director',gmCol:'Project Gross Labor Margin'}];
       for(const t of preTabs){
         try{
-          const sr=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'getSheetCSV',fileId:preFile.id,sheetName:t.sheet})});
+          const sr=await fetch('/api/proxy',{method:'POST',headers:await _proxyHeaders(),body:JSON.stringify({action:'getSheetCSV',fileId:preFile.id,sheetName:t.sheet})});
           const sd=await sr.json();
           if(sd.error)throw new Error(sd.error);
           parseCSV(sd.csv||'').forEach(row=>{

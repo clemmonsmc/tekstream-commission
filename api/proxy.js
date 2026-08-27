@@ -1,5 +1,22 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Require a valid Supabase session. This endpoint holds a Google refresh token with
+  // Drive read/write scope, so it must never be callable anonymously.
+  const authz = req.headers.authorization || '';
+  const token = authz.startsWith('Bearer ') ? authz.slice(7) : '';
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const uResp = await fetch(process.env.SUPABASE_URL + '/auth/v1/user', {
+      headers: { Authorization: 'Bearer ' + token, apikey: process.env.SUPABASE_ANON_KEY }
+    });
+    if (!uResp.ok) return res.status(401).json({ error: 'Unauthorized' });
+    const user = await uResp.json();
+    const email = (user && user.email || '').toLowerCase();
+    if (!email.endsWith('@tekstream.com')) return res.status(403).json({ error: 'Forbidden' });
+  } catch (e) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   try {
     const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
