@@ -624,7 +624,12 @@ function _currentTotals(){
     proj: (state.deals||[]).reduce((a,d)=>a+(d.projComm||0),0),
     stmt: (state.stmtRows||[]).filter(r=>r.paidDate&&String(r.paidDate).trim()).reduce((a,r)=>a+(r.busCommStmt||0),0),
     inv:  (state.deals||[]).reduce((a,d)=>a+(d.invoicedComm||0),0),
-    paid: (state.deals||[]).reduce((a,d)=>a+(d.paidComm||0),0)
+    paid: (state.deals||[]).reduce((a,d)=>a+(d.paidComm||0),0),
+    // Revenue and GM totals, so margin % is reconstructable per refresh without the source CSVs.
+    projRev: (state.deals||[]).reduce((a,d)=>a+(d.projRev||0),0),
+    projGm:  (state.deals||[]).reduce((a,d)=>a+(d.projGm||0),0),
+    invRev:  (state.deals||[]).reduce((a,d)=>a+(d.invoicedRev||0),0),
+    paidRev: (state.deals||[]).reduce((a,d)=>a+(d.paidRev||0),0)
   };
 }
 async function loadValueHistory(){
@@ -640,7 +645,10 @@ async function loadValueHistory(){
 async function writeValueHistory(){
   if(!_sb||!_user)return;
   const totals=_currentTotals(); const deals={};
-  (state.deals||[]).forEach(d=>{ deals[d.name]={projComm:d.projComm||0,invoicedComm:d.invoicedComm||0,paidComm:d.paidComm||0,projGm:d.projGm||0,months:d.months||{}}; });
+  (state.deals||[]).forEach(d=>{ deals[d.name]={projComm:d.projComm||0,invoicedComm:d.invoicedComm||0,paidComm:d.paidComm||0,
+    projGm:d.projGm||0,months:d.months||{},
+    projRev:d.projRev||0,invoicedRev:d.invoicedRev||0,paidRev:d.paidRev||0,invoicedGm:d.invoicedGm||0,paidGm:d.paidGm||0,
+    revMonths:d.revMonths||{},type:d.type||null,marginEstimated:!!d.marginEstimated}; });
   const monthly=computeMonthlySeries();
   try{
     await _sb.from('commission_value_history').insert({year:state.year,captured_at:new Date().toISOString(),totals,deals,monthly});
@@ -1781,8 +1789,9 @@ async function loadChartHistory(){
     if(data)state._histSeries=data.map(r=>({t:r.captured_at,totals:r.totals})); }catch(e){}
 }
 function computeMonthlySeries(){
-  const mGm=Array(12).fill(0),mProj=Array(12).fill(0);
+  const mGm=Array(12).fill(0),mProj=Array(12).fill(0),mRev=Array(12).fill(0);
   state.deals.forEach(d=>{
+    if(d.revMonths)Object.entries(d.revMonths).forEach(([m,r])=>{const mi=parseInt(m);if(mi>=0&&mi<12)mRev[mi]+=(r||0);});
     if(!d.months)return;
     const denom=Object.values(d.months).reduce((a,g)=>a+(g||0),0);
     Object.entries(d.months).forEach(([m,gm])=>{const mi=parseInt(m);mGm[mi]+=gm;if(denom>0)mProj[mi]+=(d.projComm||0)*((gm||0)/denom);});
@@ -1790,7 +1799,7 @@ function computeMonthlySeries(){
   const lagDist=_lagDist();
   const mProjPay=Array(12).fill(0);
   for(let m=0;m<12;m++){ if(!mProj[m])continue; Object.keys(lagDist).forEach(L=>{const pm=m+parseInt(L); if(pm>=0&&pm<12)mProjPay[pm]+=mProj[m]*lagDist[L];}); }
-  return {gm:mGm,proj:mProj,pay:mProjPay};
+  return {gm:mGm,proj:mProj,pay:mProjPay,rev:mRev};
 }
 function renderMonthly(){
   const _s=computeMonthlySeries();
