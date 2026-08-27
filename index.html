@@ -1520,7 +1520,11 @@ function processCSVs(csv){
         byProj[proj].marginEstimated=true;
       }
       const gm=(actGm||projGm)*byProj[proj].gmMult;
-      if(mi>=0){byProj[proj].months[mi]=(byProj[proj].months[mi]||0)+gm; byProj[proj].revMonths[mi]=(byProj[proj].revMonths[mi]||0)+projRev*byProj[proj].gmMult;}
+      // The software pivot has no revenue column because software revenue is counted as
+      // margin 1:1. Mirror GM into revenue so the pipeline's revenue and GM% are correct
+      // instead of software contributing GM against zero revenue.
+      const revForMonth=(type==='software')?(actGm||projGm):projRev;
+      if(mi>=0){byProj[proj].months[mi]=(byProj[proj].months[mi]||0)+gm; byProj[proj].revMonths[mi]=(byProj[proj].revMonths[mi]||0)+revForMonth*byProj[proj].gmMult;}
     });
     Object.values(byProj).forEach(d=>{
       d.projGm=Object.values(d.months).reduce((a,b)=>a+b,0);
