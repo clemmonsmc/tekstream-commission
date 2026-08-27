@@ -151,6 +151,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
 
   <div class="section">
     <div class="section-title">Commission pipeline</div>
+    <div id="est-banner"></div>
     <div id="pipeline"><div style="font-size:11px;color:#999;">Load data to see pipeline</div></div>
   </div>
 
@@ -1730,6 +1731,19 @@ function renderTypeMonthly(){
   html+='</tbody></table>';
   el.innerHTML=html;
 }
+// How much projected GM rests on a default margin rather than a real cost plan.
+function renderEstimatedBanner(){
+  const el=document.getElementById('est-banner'); if(!el)return;
+  const est=(state.deals||[]).filter(d=>d.marginEstimated);
+  if(!est.length){ el.innerHTML=''; return; }
+  const gm=est.reduce((a,x)=>a+(x.projGm||0),0);
+  const totalGm=(state.deals||[]).reduce((a,x)=>a+(x.projGm||0),0);
+  const pct=totalGm>0?(100*gm/totalGm).toFixed(1):'0.0';
+  const names=est.sort((a,b)=>(b.projGm||0)-(a.projGm||0)).slice(0,3).map(x=>x.name).join(', ');
+  el.innerHTML='<div style="background:#FFFBEB;border:1px solid #F6E05E;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#744210;">'
+    +'<b>'+fmt(gm)+'</b> of projected GM ('+pct+'%) across <b>'+est.length+'</b> project'+(est.length===1?'':'s')+' is an estimated default margin, not a costed plan. '
+    +'These will move when the projects go to WIP and resources are assigned. Largest: '+_esc(names)+'.</div>';
+}
 function renderMovers(){
   const el=document.getElementById('movers'); if(!el)return;
   const prev=state._prevDeals||{};
@@ -1757,6 +1771,7 @@ function renderMovers(){
 function renderPipeline(){
   const el=document.getElementById('pipeline'); if(!el)return;
   const d=state.deals||[];
+  renderEstimatedBanner();
   const sum=f=>d.reduce((a,x)=>a+(f(x)||0),0);
   const recv=(state.stmtRows||[]).filter(r=>r.paidDate&&r.paidDate.trim()).reduce((a,r)=>a+(r.busCommStmt||0),0);
   const rows=[
@@ -1889,7 +1904,7 @@ function renderRecon(){
       const gmDelta=hasStmtGm?stmtNetGm-projGm:null;
       if(flagF==='delta'&&(delta===null||Math.abs(delta)<0.5))return;
       if(flagF==='spiff'&&!d.spiff)return;
-      rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,gmDelta,projType,hasStmt});
+      rows.push({name:d.name,type:d.type,month:mi,spiff:d.spiff,projGm,myComm,stmtNetGm,stmtComm,delta,gmDelta,projType,hasStmt,est:!!d.marginEstimated});
     });
   });
 
@@ -1902,7 +1917,7 @@ function renderRecon(){
       <th>Proj GM</th><th>Stmt net GM</th><th>GM Δ</th><th>My comm</th><th>Stmt comm</th><th>Comm Δ</th><th class="left">Project type</th><th>Spiff</th>
     </tr></thead>
     <tbody>${rows.sort((a,b)=>a.month-b.month||(a.name>b.name?1:-1)).map(r=>`<tr>
-      <td class="deal-name" title="${r.name}">${r.name}</td>
+      <td class="deal-name" title="${r.name}${r.est?' — GM is a default margin, no cost plan loaded yet':''}">${r.name}${r.est?' <span style="color:#B7791F;font-size:9px;font-weight:600;">EST</span>':''}</td>
       <td><span class="badge badge-${r.type}">${r.type}</span></td>
       <td class="left">${MONTHS[r.month]||'—'}</td>
       <td>${fmt(r.projGm)}</td>
