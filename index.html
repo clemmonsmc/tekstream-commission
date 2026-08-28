@@ -116,10 +116,13 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   <div style="background:#fff;border:1px solid #e0e0d8;border-radius:10px;padding:32px 36px;max-width:360px;text-align:center;">
     <div style="font-size:16px;font-weight:600;color:#003658;margin-bottom:6px;">Pipeline Console</div>
     <div style="font-size:12px;color:#888;margin-bottom:20px;">Sign in with your TekStream account.</div>
-    <button id="gate-signin" onclick="_signIn()" style="padding:9px 18px;border:none;border-radius:7px;background:#003658;color:#fff;font-size:13px;cursor:pointer;">Sign in with Google</button>
     <div style="display:flex;align-items:center;gap:8px;margin:18px 0 12px;color:#bbb;font-size:10px;"><div style="flex:1;height:1px;background:#e8e8e0;"></div>OR<div style="flex:1;height:1px;background:#e8e8e0;"></div></div>
     <input id="gate-email" type="email" autocomplete="email" placeholder="you@tekstream.com" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d0d8e0;border-radius:7px;font-size:13px;margin-bottom:8px;" onkeydown="if(event.key==='Enter')_signInEmail()">
+    <input id="gate-pass" type="password" autocomplete="current-password" placeholder="Password" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d0d8e0;border-radius:7px;font-size:13px;margin-bottom:8px;" onkeydown="if(event.key==='Enter')_signInPassword()">
+    <button id="gate-pw-btn" onclick="_signInPassword()" style="padding:9px 18px;border:none;border-radius:7px;background:#003658;color:#fff;font-size:13px;cursor:pointer;width:100%;">Sign in</button>
+    <div style="display:flex;align-items:center;gap:8px;margin:16px 0 10px;color:#bbb;font-size:10px;"><div style="flex:1;height:1px;background:#e8e8e0;"></div>OR<div style="flex:1;height:1px;background:#e8e8e0;"></div></div>
     <button id="gate-link" onclick="_signInEmail()" style="padding:8px 18px;border:1px solid #003658;border-radius:7px;background:#fff;color:#003658;font-size:13px;cursor:pointer;width:100%;">Email me a sign-in link</button>
+    <button id="gate-signin" onclick="_signIn()" style="padding:7px 18px;border:none;border-radius:7px;background:none;color:#888;font-size:11px;cursor:pointer;width:100%;margin-top:8px;text-decoration:underline;">Sign in with Google</button>
     <div id="gate-msg" style="font-size:11px;color:#A32D2D;margin-top:14px;min-height:14px;"></div>
   </div>
 </div>
@@ -319,6 +322,30 @@ async function _signIn(){
 // Magic-link sign-in. Bypasses Google entirely, so an Entra block on the federated
 // Google app does not lock you out. shouldCreateUser:false means the link only works
 // for an account that already exists, so this cannot silently create a fresh empty user.
+// Password sign-in. Google federates through Entra and can fail with an admin
+// error outside our control; magic link depends on rate-limited SMTP. Password
+// is the path that always works, so it is the default.
+async function _signInPassword(){
+  if(!_sb){_gateMsg('Not ready yet, try again.');return;}
+  const el=document.getElementById('gate-email');
+  const pel=document.getElementById('gate-pass');
+  const email=((el&&el.value)||'').trim().toLowerCase();
+  const password=(pel&&pel.value)||'';
+  if(!email){_gateMsg('Enter your email address.');return;}
+  if(!email.endsWith(TS_DOMAIN)){_gateMsg('Use a '+TS_DOMAIN+' address.');return;}
+  if(!password){_gateMsg('Enter your password.');return;}
+  const btn=document.getElementById('gate-pw-btn');
+  if(btn){btn.disabled=true;btn.textContent='Signing in\u2026';}
+  try{
+    const {error}=await _sb.auth.signInWithPassword({email,password});
+    if(error)throw error;
+    if(pel)pel.value='';
+  }catch(e){
+    const m=document.getElementById('gate-msg'); if(m)m.style.color='#A32D2D';
+    _gateMsg(e.message||'Sign-in failed.');
+    if(btn){btn.disabled=false;btn.textContent='Sign in';}
+  }
+}
 async function _signInEmail(){
   if(!_sb){_gateMsg('Not ready yet, try again.');return;}
   const el=document.getElementById('gate-email');
