@@ -14,6 +14,20 @@ export default async function handler(req, res) {
     const user = await uResp.json();
     const email = (user && user.email || '').toLowerCase();
     if (!email.endsWith('@tekstream.com')) return res.status(403).json({ error: 'Forbidden' });
+
+    // A valid TekStream session is not enough. The Drive credentials on this server
+    // belong to one person, so this relay returns that person's commission data to
+    // whoever calls it. Require an explicit grant on the commission app.
+    // Queried with the caller's own token: app_access only exposes their own row.
+    const aResp = await fetch(
+      process.env.SUPABASE_URL + '/rest/v1/app_access?select=role&app=eq.commission',
+      { headers: { Authorization: 'Bearer ' + token, apikey: process.env.SUPABASE_ANON_KEY } }
+    );
+    if (!aResp.ok) return res.status(403).json({ error: 'Forbidden' });
+    const grants = await aResp.json();
+    if (!Array.isArray(grants) || grants.length === 0) {
+      return res.status(403).json({ error: 'No access to the commission app' });
+    }
   } catch (e) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
