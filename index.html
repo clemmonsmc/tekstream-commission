@@ -178,6 +178,11 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   </div>
 
   <div class="section">
+    <div class="section-title">Margin drift vs sold</div>
+    <div id="drift"><div style="font-size:11px;color:#999;">Refresh to load.</div></div>
+  </div>
+
+  <div class="section">
     <div class="section-title">By type — projected GM</div>
     <div id="type-breakdown"><div style="font-size:11px;color:#999;">Load data to see breakdown</div></div>
   </div>
@@ -256,6 +261,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     <div class="config-row"><label>Invoices CSV</label><input type="text" id="cfg-inv" value="commission_calc__invoices_report.csv" /></div>
     <div class="config-row"><label>Payments CSV</label><input type="text" id="cfg-pay" value="commission_calc__invoice_payments_monthly_report.csv" /></div>
     <div class="config-row"><label>GM pivot CSV</label><input type="text" id="cfg-gm" value="commission_calc__gross_margin_report_pivot.csv" /></div>
+    <div class="config-row"><label>Project margins CSV</label><input type="text" id="cfg-margins" value="commission_calc__project_margins_report_pivot.csv" /></div>
     <div class="config-row"><label>Commission statement</label><input type="text" id="cfg-stmt" value="commission_statement.xlsx" /></div>
     <div class="config-row"><label>Preapproval file</label><input type="text" id="cfg-preapproval" value="commission_preapproval.xlsx" /></div>
     <div class="config-row"><label>BD Director name</label><input type="text" id="cfg-bddir" value="Matthew Clemmons" /></div>
@@ -1374,7 +1380,8 @@ async function loadYearData(){
   const fid=document.getElementById('cfg-folder').value.trim();
   const fileCfg=[
     {key:'svc',id:'cfg-svc'},{key:'sw',id:'cfg-sw'},{key:'staff',id:'cfg-staff'},
-    {key:'inv',id:'cfg-inv'},{key:'pay',id:'cfg-pay'},{key:'gm',id:'cfg-gm'}
+    {key:'inv',id:'cfg-inv'},{key:'pay',id:'cfg-pay'},{key:'gm',id:'cfg-gm'},
+    {key:'margins',id:'cfg-margins'}
   ];
 
   try{
@@ -1500,7 +1507,7 @@ async function loadData(){
       await loadPriorDeals();
     renderSpiffTable(); renderSpiffReview();
     renderDashboard();
-    const _LBL={svc:'Services',sw:'Software',staff:'Staffing',inv:'Invoices',pay:'Payments',gm:'GM pivot',stmt:'Statement'};
+    const _LBL={svc:'Services',sw:'Software',staff:'Staffing',inv:'Invoices',pay:'Payments',gm:'GM pivot',margins:'Project margins',stmt:'Statement'};
     const note=res.missing.length?` — missing: ${res.missing.join(', ')}`:' — all files loaded';
     const staleNote=res.stale.length?` — unchanged since last refresh: ${res.stale.map(k=>_LBL[k]||k).join(', ')}`:'';
     setStatus(res.stale.length?'warn':'ok',`Live data from Drive (both years)${note}${staleNote}. Saved + refreshed ${new Date().toLocaleTimeString()}`);
@@ -1593,6 +1600,25 @@ function processCSVs(csv){
 
   state.invoiceRows=parseCSV(csv.inv).map(r=>({proj:r['Project']||r['Invoice - Project']||'',date:r['Date']||'',total:parseFloat(r['Total']||0)||0}));
   state.paymentRows=parseCSV(csv.pay).map(r=>({proj:r['Invoice - Project']||r['Project']||'',paidDate:r['Date']||'',total:parseFloat(r['Invoice - Total']||r['Total']||0)||0}));
+  // Project margins pivot: the only source carrying the margin a project was SOLD at.
+  // Everything else is current projection or actuals, so without this there is no way
+  // to tell an overrun from a deal that was always thin.
+  // Two quirks in the export, both handled here rather than shown to the user:
+  //  - OpenAir emits 2147483647 (int32 max) where the divisor is zero, e.g. a project
+  //    whose revenue has slipped out of the year. Treated as no value.
+  //  - The export carries percentages only; there is no reliable dollar column. An
+  //    earlier version emitted "GM $ Delta (Actual vs Original)" identical to
+  //    "Projected Margin ($)" in 39 of 40 rows, so neither is read.
+  // Drift is computed here as current minus original rather than taken from the
+  // export's own delta column, so the arithmetic is visible in one place.
+  const _SENTINEL=2147483647;
+  const _pctOrNull=v=>{const n=parseFloat(v);return (!isFinite(n)||Math.abs(n)>=_SENTINEL)?null:n;};
+  state.marginRows=parseCSV(csv.margins).map(r=>({
+    proj:resolveName((r['Project']||'').trim()),
+    customer:r['Customer']||'',
+    origPct:_pctOrNull(r['Original Gross Margin (%)']),
+    nowPct:_pctOrNull(r['Projected Margin (%)'])
+  })).filter(r=>r.proj);
   state.gmRows=parseCSV(csv.gm).map(r=>({proj:r['Project']||'',date:r['Date']||'',mi:r['Date']?new Date(r['Date']).getMonth():-1,gm:parseFloat(r['Project Net Gross Margin (Revrec)']||0)||0}));
 
   state.deals=allDeals;
@@ -1657,6 +1683,7 @@ function renderDashboard(){
 
   renderPipeline();
   renderMovers();
+  renderDrift();
   renderCharts();
   renderMonthly();
   renderAliasPanel();
@@ -1788,6 +1815,31 @@ function renderEstimatedBanner(){
   el.innerHTML='<div style="background:#FFFBEB;border:1px solid #F6E05E;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#744210;">'
     +'<b>'+fmt(gm)+'</b> of projected GM ('+pct+'%) across <b>'+est.length+'</b> project'+(est.length===1?'':'s')+' is an estimated default margin, not a costed plan. '
     +'These will move when the projects go to WIP and resources are assigned. Largest: '+_esc(names)+'.</div>';
+}
+// Drift is measured against Original Gross Margin (%) from the project margins pivot,
+// which is the sold margin. A large negative drift is an overrun; a project that was
+// always thin shows a small drift even at a low margin, and those are different problems.
+function renderDrift(){
+  const el=document.getElementById('drift'); if(!el)return;
+  const rows=(state.marginRows||[]).filter(r=>r.origPct!==null&&r.nowPct!==null)
+    .map(r=>({name:r.proj,orig:r.origPct,now:r.nowPct,drift:r.nowPct-r.origPct}))
+    .filter(r=>r.drift<=-5||r.now<0);
+  const skipped=(state.marginRows||[]).filter(r=>r.origPct===null||r.nowPct===null).length;
+  if(!state.marginRows||!state.marginRows.length){
+    el.innerHTML='<div style="font-size:11px;color:#999;">Project margins CSV not loaded.</div>';return;
+  }
+  if(!rows.length){
+    el.innerHTML='<div style="font-size:11px;color:#999;">No project has drifted more than 5 points below its sold margin.</div>';return;
+  }
+  rows.sort((a,b)=>a.drift-b.drift);
+  const pct=n=>(n<0?'-':'')+Math.abs(n).toFixed(1)+'%';
+  const note=skipped?`<div style="font-size:10px;color:#999;margin-top:6px;">${skipped} project(s) omitted: the export reports no usable percentage, typically where revenue has moved out of this year.</div>`:'';
+  el.innerHTML='<div class="tbl-wrap"><table><thead><tr><th class="left">Project</th><th>Sold</th><th>Now</th><th>Drift</th></tr></thead><tbody>'
+    +rows.map(r=>{
+      const red=r.now<0?'color:#A32D2D;font-weight:600;':'';
+      return `<tr><td class="left" style="${red}">${r.name}</td><td>${pct(r.orig)}</td><td style="${red}">${pct(r.now)}</td><td style="color:#A32D2D;">${r.drift.toFixed(1)} pts</td></tr>`;
+    }).join('')
+    +'</tbody></table></div>'+note;
 }
 function renderMovers(){
   const el=document.getElementById('movers'); if(!el)return;
