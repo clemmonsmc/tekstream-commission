@@ -267,6 +267,7 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
     <div class="config-row"><label>BD Director name</label><input type="text" id="cfg-bddir" value="Matthew Clemmons" /></div>
     <div class="config-row"><label>Spiff list (JSON)</label><input type="text" id="cfg-spiff" value="commission_spiffs.json" /></div>
     <div style="height:6px;"></div>
+    <div class="config-row"><label>Month close lag (days)</label><input type="number" id="cfg-close-lag" value="5" min="0" max="60" step="1" /><span style="color:#999;font-size:10px">Actuals are only trusted once a month has been closed this long. Before that the projection is used.</span></div>
     <div class="config-row"><label>Default margin % (services)</label><input type="number" id="cfg-margin-services" value="35" min="0" max="100" step="0.1" /></div>
     <div class="config-row"><label>Default margin % (staffing)</label><input type="number" id="cfg-margin-staffing" value="22" min="0" max="100" step="0.1" /></div>
     <div class="config-row"><label>Default margin % (software)</label><input type="number" id="cfg-margin-software" value="100" min="0" max="100" step="0.1" /></div>
@@ -760,6 +761,29 @@ function fmtD(n,thr=0.5) {
   const cls=n>0?'delta-pos':'delta-neg',s=n>0?'+':'';
   return `<span class="${cls}">${s}${fmt(n)}</span>`;
 }
+// A month's actual margin is only usable once the month has ended AND had time to
+// settle. OpenAir populates Project Net Gross Margin (Revrec) for a month that is
+// still running, so an in-progress month carries a partial actual. The app pairs GM
+// with PROJECTED revenue (the pivots carry no actual revenue column), so a partial
+// actual against a whole month of revenue reports cost that was never incurred.
+// Observed: Geraci September read -3,120 GM five business days in, against a 5,315
+// projection, inflating derived cost from 15.9k to 24.4k.
+// Actuals also keep moving after close (August GM moved 3,900 -> 4,485 a week later),
+// hence the lag rather than a bare month-end test.
+const _CLOSE_LAG_FALLBACK=5;
+function _closeLagDays(){
+  const el=document.getElementById('cfg-close-lag');
+  let v=el?parseFloat(el.value):NaN;
+  if(!isFinite(v)||v<0||v>60)v=_CLOSE_LAG_FALLBACK;
+  return v;
+}
+// True when month mi of the displayed year ended at least the lag ago.
+function _monthSettled(mi){
+  if(mi<0||mi>11)return false;
+  const endOfMonth=new Date(state.year,mi+1,1).getTime();
+  return Date.now() >= endOfMonth + _closeLagDays()*86400000;
+}
+
 // Default margin applied to booked-but-not-started projects that carry no cost.
 // Persisted per user in commission_settings so it survives a reload.
 const _MARGIN_FALLBACK={services:35,staffing:22,software:100};
@@ -779,6 +803,8 @@ async function loadSettings(){
       const el=document.getElementById('cfg-margin-'+t);
       if(el&&m[t]!=null)el.value=m[t];
     });
+    const lagEl=document.getElementById('cfg-close-lag');
+    if(lagEl&&s.closeLagDays!=null)lagEl.value=s.closeLagDays;
   }catch(e){}
 }
 async function saveSettings(){
@@ -789,10 +815,13 @@ async function saveSettings(){
     if(!isFinite(pct)||pct<0||pct>100){ setStatus('err','Default margin for '+t+' must be between 0 and 100.'); return; }
     marginPct[t]=pct;
   }
+  const lagEl=document.getElementById('cfg-close-lag');
+  const closeLagDays=lagEl?parseFloat(lagEl.value):_CLOSE_LAG_FALLBACK;
+  if(!isFinite(closeLagDays)||closeLagDays<0||closeLagDays>60){ setStatus('err','Month close lag must be between 0 and 60 days.'); return; }
   if(!_sb||!_user){ setStatus('err','Sign in to save settings.'); return; }
   try{
     const {error}=await _sb.from('commission_settings')
-      .upsert({owner_id:_user.id,data:{marginPct},updated_at:new Date().toISOString()},{onConflict:'owner_id'});
+      .upsert({owner_id:_user.id,data:{marginPct,closeLagDays},updated_at:new Date().toISOString()},{onConflict:'owner_id'});
     if(error)throw error;
     setStatus('ok','Settings saved. Click Refresh to reload data with the new default.');
   }catch(e){ setStatus('err','Could not save settings: '+e.message); }
@@ -1572,11 +1601,15 @@ function processCSVs(csv){
         projGm=projRev*_defaultMarginPct(type);
         byProj[proj].marginEstimated=true;
       }
-      const gm=(actGm||projGm)*byProj[proj].gmMult;
+      // Use the actual only for a settled month; otherwise keep the projection.
+      const useActual=_monthSettled(mi)&&actGm!==0;
+      const gmBase=useActual?actGm:projGm;
+      const gm=gmBase*byProj[proj].gmMult;
+      if(!useActual&&actGm!==0)byProj[proj].hasOpenMonth=true;
       // The software pivot has no revenue column because software revenue is counted as
       // margin 1:1. Mirror GM into revenue so the pipeline's revenue and GM% are correct
       // instead of software contributing GM against zero revenue.
-      const revForMonth=(type==='software')?(actGm||projGm):projRev;
+      const revForMonth=(type==='software')?gmBase:projRev;
       if(mi>=0){byProj[proj].months[mi]=(byProj[proj].months[mi]||0)+gm; byProj[proj].revMonths[mi]=(byProj[proj].revMonths[mi]||0)+revForMonth*byProj[proj].gmMult;}
     });
     Object.values(byProj).forEach(d=>{
