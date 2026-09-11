@@ -368,7 +368,12 @@ async function _signInEmail(){
     if(btn){btn.disabled=false;btn.textContent='Email me a sign-in link';}
   }
 }
-async function _signOut(){ if(_sb){await _sb.auth.signOut();} }
+// Sign-out lands on Hub rather than this app's own gate: the user is leaving, and
+// the front door is more useful than the login box of the thing they just closed.
+async function _signOut(){
+  if(_sb){await _sb.auth.signOut();}
+  window.location.href='https://tekstream-hub.vercel.app';
+}
 function _applySession(session){
   const email=(session&&session.user&&session.user.email)||'';
   if(session&&email){
