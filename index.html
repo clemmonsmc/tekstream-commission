@@ -108,20 +108,50 @@ tr.subtotal td { background: #f5f5f0; font-weight: 600; border-top: 1px solid #e
   .tbl-wrap { max-height: 65vh; }
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Shared sign-in. The same block sits in Hub, Quote and Pipeline; MAP and Expense
+     use the same library from npm with the same cookie settings. The Supabase session
+     lives in one cookie on .quotejockey.com, so a sign-in at the Hub is seen by every
+     app. Hub is the only sign-in page; the other apps send people there. -->
+<script type="module">
+import { createBrowserClient } from 'https://cdn.jsdelivr.net/npm/@supabase/ssr@0.5.2/+esm';
+const HUB = 'https://hub.quotejockey.com';
+const onSuite = /(^|\.)quotejockey\.com$/.test(location.hostname);
+const cookieOptions = onSuite
+  ? { domain: '.quotejockey.com', path: '/', sameSite: 'lax', secure: true }
+  : { path: '/', sameSite: 'lax', secure: location.protocol === 'https:' };
+// Sessions used to be kept per app in localStorage. Drop that stale copy.
+try { Object.keys(localStorage).forEach(k => { if (/^sb-.+-auth-token/.test(k)) localStorage.removeItem(k); }); } catch (e) {}
+window.TSAuth = {
+  HUB,
+  createClient: (url, key) => createBrowserClient(url, key, { cookieOptions }),
+  // Send the user to the Hub sign-in; the Hub returns them to this exact page.
+  toHub: () => location.replace(HUB + '/?next=' + encodeURIComponent(location.href)),
+};
+window.dispatchEvent(new Event('tsauth-ready'));
+</script>
+<script>
+// Classic scripts run before the module above, so app code waits on this.
+function _whenAuthReady(cb, onFail){
+  if (window.TSAuth) { cb(); return; }
+  var done = false;
+  window.addEventListener('tsauth-ready', function(){ if(!done){ done = true; cb(); } }, { once: true });
+  setTimeout(function(){ if(!done && !window.TSAuth){ done = true; if(onFail) onFail(); } }, 15000);
+}
+// Old vercel.app production addresses forward to the quotejockey.com address, where
+// the shared sign-in works. Preview deployments (other vercel.app names) are left alone.
+(function(){
+  var m = { 'tekstream-hub.vercel.app':'hub', 'tekstream-quotes.vercel.app':'quotes', 'tekstream-commission.vercel.app':'pipeline' }[location.hostname];
+  if (m) location.replace('https://' + m + '.quotejockey.com' + location.pathname + location.search + location.hash);
+})();
+</script>
 <style id="xapp-nav-css">.xapp-nav{position:sticky;top:0;z-index:500;display:flex;align-items:center;background:#003658;padding:0 12px;height:38px;font-family:Roboto,system-ui,-apple-system,sans-serif;}.xapp-nav a,.xapp-nav .xapp-cur{display:inline-flex;align-items:center;height:38px;padding:0 12px;font-size:13px;font-weight:500;text-decoration:none;line-height:1;}.xapp-nav a{color:#cfe0ef;}.xapp-nav a:hover{color:#fff;background:rgba(255,255,255,0.08);}.xapp-nav .xapp-home{padding-left:0;padding-right:14px;}.xapp-nav .xapp-home img{width:22px;height:22px;border-radius:5px;display:block;}.xapp-nav .xapp-cur{color:#fff;font-weight:700;border-bottom:2px solid #5B94CB;cursor:default;}</style><link rel="icon" type="image/png" href="data:image/png;base64,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">
 </head>
 <body>
 <div id="authGate" style="position:fixed;inset:0;background:#f8f8f6;display:flex;align-items:center;justify-content:center;z-index:9999;">
   <div style="background:#fff;border:1px solid #e0e0d8;border-radius:10px;padding:32px 36px;max-width:360px;text-align:center;">
     <div style="font-size:16px;font-weight:600;color:#003658;margin-bottom:6px;">Pipeline Console</div>
-    <div style="font-size:12px;color:#888;margin-bottom:20px;">Sign in with your TekStream account.</div>
-    <div style="display:flex;align-items:center;gap:8px;margin:18px 0 12px;color:#bbb;font-size:10px;"><div style="flex:1;height:1px;background:#e8e8e0;"></div>OR<div style="flex:1;height:1px;background:#e8e8e0;"></div></div>
-    <input id="gate-email" type="email" autocomplete="email" placeholder="you@tekstream.com" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d0d8e0;border-radius:7px;font-size:13px;margin-bottom:8px;" onkeydown="if(event.key==='Enter')_signInEmail()">
-    <input id="gate-pass" type="password" autocomplete="current-password" placeholder="Password" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d0d8e0;border-radius:7px;font-size:13px;margin-bottom:8px;" onkeydown="if(event.key==='Enter')_signInPassword()">
-    <button id="gate-pw-btn" onclick="_signInPassword()" style="padding:9px 18px;border:none;border-radius:7px;background:#003658;color:#fff;font-size:13px;cursor:pointer;width:100%;">Sign in</button>
-    <div style="display:flex;align-items:center;gap:8px;margin:16px 0 10px;color:#bbb;font-size:10px;"><div style="flex:1;height:1px;background:#e8e8e0;"></div>OR<div style="flex:1;height:1px;background:#e8e8e0;"></div></div>
-    <button id="gate-link" onclick="_signInEmail()" style="padding:8px 18px;border:1px solid #003658;border-radius:7px;background:#fff;color:#003658;font-size:13px;cursor:pointer;width:100%;">Email me a sign-in link</button>
+    <div id="gate-status" style="font-size:12px;color:#888;margin-bottom:8px;">Checking sign-in…</div>
+    <a id="gate-hub" href="https://hub.quotejockey.com" style="display:none;color:#5B94CB;font-size:13px">Back to TekStream Tools</a>
     <div id="gate-msg" style="font-size:11px;color:#A32D2D;margin-top:14px;min-height:14px;"></div>
   </div>
 </div>
@@ -311,62 +341,33 @@ async function _proxyHeaders(){
     if(data&&data.session) h.Authorization='Bearer '+data.session.access_token; }
   return h;
 }
+// Sign-in happens on the Hub only. With no session, go there; it sends the user
+// back here. A session without a "commission" grant gets a no-access screen.
+let _granted=false;
+function _gateStatus(m){const el=document.getElementById('gate-status');if(el)el.textContent=m||'';}
 async function _sbInit(){
   try{
     const cfg=await (await fetch('/api/config')).json();
     if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY){_gateMsg('Supabase is not configured (env vars).');return;}
-    _sb=window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-    _sb.auth.onAuthStateChange((_e,session)=>_applySession(session));
+    _sb=window.TSAuth.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    _sb.auth.onAuthStateChange((ev,session)=>{
+      if(ev==='SIGNED_OUT'){ window.TSAuth.toHub(); return; }
+      if(_granted&&session)_applySession(session);
+    });
     const {data}=await _sb.auth.getSession();
-    _applySession(data.session);
+    const session=data&&data.session;
+    if(!session){ window.TSAuth.toHub(); return; }
+    const email=((session.user&&session.user.email)||'').toLowerCase();
+    if(!email.endsWith(TS_DOMAIN)){ await _sb.auth.signOut(); window.TSAuth.toHub(); return; }
+    const g=await _sb.rpc('has_app_access',{p_app:'commission'});
+    if(!g||g.error||g.data!==true){
+      _gateStatus('Your account ('+email+') does not have access to the Pipeline Console. Ask Matt for access.');
+      const a=document.getElementById('gate-hub'); if(a)a.style.display='';
+      return;
+    }
+    _granted=true;
+    _applySession(session);
   }catch(e){_gateMsg('Init failed: '+e.message);}
-}
-// Magic-link sign-in. Bypasses Google entirely, so an Entra block on the federated
-// Google app does not lock you out. shouldCreateUser:false means the link only works
-// for an account that already exists, so this cannot silently create a fresh empty user.
-// Password sign-in. Google federates through Entra and can fail with an admin
-// error outside our control; magic link depends on rate-limited SMTP. Password
-// is the path that always works, so it is the default.
-async function _signInPassword(){
-  if(!_sb){_gateMsg('Not ready yet, try again.');return;}
-  const el=document.getElementById('gate-email');
-  const pel=document.getElementById('gate-pass');
-  const email=((el&&el.value)||'').trim().toLowerCase();
-  const password=(pel&&pel.value)||'';
-  if(!email){_gateMsg('Enter your email address.');return;}
-  if(!email.endsWith(TS_DOMAIN)){_gateMsg('Use a '+TS_DOMAIN+' address.');return;}
-  if(!password){_gateMsg('Enter your password.');return;}
-  const btn=document.getElementById('gate-pw-btn');
-  if(btn){btn.disabled=true;btn.textContent='Signing in\u2026';}
-  try{
-    const {error}=await _sb.auth.signInWithPassword({email,password});
-    if(error)throw error;
-    if(pel)pel.value='';
-  }catch(e){
-    const m=document.getElementById('gate-msg'); if(m)m.style.color='#A32D2D';
-    _gateMsg(e.message||'Sign-in failed.');
-    if(btn){btn.disabled=false;btn.textContent='Sign in';}
-  }
-}
-async function _signInEmail(){
-  if(!_sb){_gateMsg('Not ready yet, try again.');return;}
-  const el=document.getElementById('gate-email');
-  const email=((el&&el.value)||'').trim().toLowerCase();
-  if(!email){_gateMsg('Enter your email address.');return;}
-  if(!email.endsWith(TS_DOMAIN)){_gateMsg('Use a '+TS_DOMAIN+' address.');return;}
-  const btn=document.getElementById('gate-link');
-  if(btn){btn.disabled=true;btn.textContent='Sending\u2026';}
-  try{
-    const {error}=await _sb.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin,shouldCreateUser:false}});
-    if(error)throw error;
-    const m=document.getElementById('gate-msg');
-    if(m){m.style.color='#2F855A';m.textContent='Check your email for the sign-in link. It can take a minute.';}
-    if(btn)btn.textContent='Link sent';
-  }catch(e){
-    const m=document.getElementById('gate-msg'); if(m)m.style.color='#A32D2D';
-    _gateMsg(e.message||'Could not send the link.');
-    if(btn){btn.disabled=false;btn.textContent='Email me a sign-in link';}
-  }
 }
 // Sign-out lands on Hub rather than this app's own gate: the user is leaving, and
 // the front door is more useful than the login box of the thing they just closed.
@@ -2069,7 +2070,7 @@ function renderRecon(){
 
 renderTiers();
 initYearTabs();
-_sbInit();
+_whenAuthReady(_sbInit, ()=>_gateMsg('Could not load sign-in. Check your connection and reload.'));
 </script>
 </div>
 </body>
