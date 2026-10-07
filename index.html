@@ -1360,16 +1360,6 @@ function addSpiffRow(){state.spiffs.push({name:'',commSpiff:1,gmSpiff:0.5});rend
 function saveSpiffsLocal(){try{localStorage.setItem('comm_spiffs',JSON.stringify(state.spiffs));document.getElementById('spiff-status').textContent='Saved locally in browser.';}catch(e){}}
 function loadSpiffsLocal(){try{const d=localStorage.getItem('comm_spiffs');if(d)state.spiffs=JSON.parse(d);}catch(e){}}
 
-async function saveSpiffsToDrive(){
-  const json=JSON.stringify(state.spiffs,null,2);
-  const fid=document.getElementById('cfg-folder').value.trim();
-  const fname=document.getElementById('cfg-spiff').value.trim();
-  try{
-    const sr=await fetch('/api/proxy',{method:'POST',headers:await _proxyHeaders(),body:JSON.stringify({action:'save',folderId:fid,fileName:fname,content:json})});const sd=await sr.json();if(sd.error)throw new Error(sd.error);
-    document.getElementById('spiff-status').textContent='Saved to Drive successfully.';
-  }catch(e){document.getElementById('spiff-status').textContent='Drive save failed: '+e.message;saveSpiffsLocal();}
-}
-
 async function driveList(folderId){
   const r=await fetch('/api/proxy',{method:'POST',headers:await _proxyHeaders(),body:JSON.stringify({action:'list',folderId})});
   const d=await r.json();if(d.error)throw new Error(JSON.stringify(d.error));return d.files||[];

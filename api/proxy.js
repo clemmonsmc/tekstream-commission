@@ -90,14 +90,6 @@ export default async function handler(req, res) {
       }
     }
 
-    if (action === 'save') {
-      const listR = await fetch("https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+name='" + fileName + "'+and+trashed=false&fields=files(id)", { headers: auth });
-      const existingId = (await listR.json()).files?.[0]?.id;
-      const uploadId = existingId || (await (await fetch('https://www.googleapis.com/drive/v3/files', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fileName, parents: [folderId] }) })).json()).id;
-      await fetch('https://www.googleapis.com/upload/drive/v3/files/' + uploadId + '?uploadType=media', { method: 'PATCH', headers: { ...auth, 'Content-Type': 'application/json' }, body: content });
-      return res.json({ ok: true });
-    }
-
     return res.status(400).json({ error: 'Unknown action: ' + action });
   } catch (err) {
     return res.status(500).json({ error: err.message });
